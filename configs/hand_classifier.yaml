@@ -56,6 +56,13 @@ export:
   onnx_opset: 13
   dynamic_batch: true
 
+# CVAT label export test settings
+cvat_label_test:
+  # Source directory containing images/ and cvat_autolabel.xml
+  source_dir: "../autodl-tmp/DatasetFab/HCFCVATTestSource/dataset_source"
+  # Output filename (saved alongside the source XML, original cvat_autolabel.xml unchanged)
+  output_filename: "cvat_hcf.xml"
+
 # Output paths (relative to repo root)
 paths:
   checkpoint_dir: "../autodl-tmp/TrainFab/outputs/checkpoints"
