@@ -4,7 +4,12 @@
 
 ## 概述
 
-HCF 系统训练一个 MobileNetV3-Small 模型，对 Hand ROI 图像进行 Left（左手，标签 0）/ Right（右手，标签 1）二分类。训练好的模型导出为 ONNX 格式，用于对 CVAT 自动标注 XML 文件进行重新标注，将其中的 `unknown_handedness` 标签替换为预测的 handedness 标签。
+HCF 系统训练一个双头 MobileNetV3-Small 模型，共享 backbone，同时进行两项分类任务：
+
+1. **handedness**：Left（左手，标签 0）/ Right（右手，标签 1）
+2. **hand_presence**：no_hand（无手，标签 0）/ has_hand（有手，标签 1）
+
+模型输出为 dict：`{"handedness": Tensor, "hand_presence": Tensor}`。训练好的模型导出为 ONNX 格式（包含两个输出头），用于对 CVAT 自动标注 XML 文件进行重新标注。
 
 流水线包含以下五个阶段：
 
