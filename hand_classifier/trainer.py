@@ -223,7 +223,12 @@ def train(config):
 
             with autocast(enabled=use_amp):
                 outputs = model(images)
-                loss_h = criterion_h(outputs["handedness"], h_labels)
+                # Guard: CrossEntropyLoss + weight + all-ignored → NaN
+                valid_h = h_labels >= 0
+                if valid_h.any():
+                    loss_h = criterion_h(outputs["handedness"], h_labels)
+                else:
+                    loss_h = torch.tensor(0.0, device=device)
                 loss_p = criterion_p(outputs["hand_presence"], p_labels)
                 loss = h_loss_weight * loss_h + p_loss_weight * loss_p
 
@@ -236,7 +241,6 @@ def train(config):
             train_loss_p += loss_p.item() * images.size(0)
 
             # Handedness accuracy (only on valid labels)
-            valid_h = h_labels >= 0
             if valid_h.any():
                 _, pred_h = outputs["handedness"].max(1)
                 train_correct_h += pred_h[valid_h].eq(
@@ -267,8 +271,8 @@ def train(config):
             "acc_p": round(train_correct_p / n, 6),
         }
 
-        # Validation (AMP disabled: fp16 softmax can produce NaN in loss)
-        val_metrics = _validate(model, val_loader, device, False,
+        # Validation
+        val_metrics = _validate(model, val_loader, device,
                                 criterion_h, criterion_p,
                                 h_loss_weight, p_loss_weight)
 
@@ -335,7 +339,7 @@ def train(config):
     return str(checkpoint_dir / "best.pth")
 
 
-def _validate(model, dataloader, device, use_amp,
+def _validate(model, dataloader, device,
               criterion_h, criterion_p, h_weight, p_weight):
     """Run validation for dual-head model."""
     model.eval()
@@ -349,18 +353,21 @@ def _validate(model, dataloader, device, use_amp,
             h_labels = h_labels.to(device, non_blocking=True)
             p_labels = p_labels.to(device, non_blocking=True)
 
-            with autocast(enabled=use_amp):
-                outputs = model(images)
+            outputs = model(images)  # No AMP in validation
+            # Guard: CrossEntropyLoss + weight + all-ignored → NaN
+            valid_h = h_labels >= 0
+            if valid_h.any():
                 loss_h = criterion_h(outputs["handedness"], h_labels)
-                loss_p = criterion_p(outputs["hand_presence"], p_labels)
-                loss = h_weight * loss_h + p_weight * loss_p
+            else:
+                loss_h = torch.tensor(0.0, device=device)
+            loss_p = criterion_p(outputs["hand_presence"], p_labels)
+            loss = h_weight * loss_h + p_weight * loss_p
 
             n = images.size(0)
             total_loss += loss.item() * n
             total_h += loss_h.item() * n
             total_p += loss_p.item() * n
 
-            valid_h = h_labels >= 0
             if valid_h.any():
                 _, pred_h = outputs["handedness"].max(1)
                 correct_h += pred_h[valid_h].eq(
