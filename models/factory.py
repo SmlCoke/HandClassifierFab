@@ -9,16 +9,18 @@ _MODEL_BUILDERS = {
 }
 
 
-def build_model(architecture, pretrained=True, num_classes=2):
+def build_model(architecture, pretrained=True,
+                num_handedness=2, num_presence=2):
     """Build a hand classifier model by name.
 
     Args:
         architecture: One of 'mobilenet_v3_small', 'mobilenet_v3_large'.
         pretrained: Whether to load ImageNet pretrained weights.
-        num_classes: Number of output classes.
+        num_handedness: Number of handedness output classes.
+        num_presence: Number of hand presence output classes.
 
     Returns:
-        nn.Module: The built model.
+        DualHeadMobileNetV3
 
     Raises:
         ValueError: If architecture is unknown.
@@ -29,7 +31,9 @@ def build_model(architecture, pretrained=True, num_classes=2):
             f"Available: {list(_MODEL_BUILDERS.keys())}"
         )
     return _MODEL_BUILDERS[architecture](
-        pretrained=pretrained, num_classes=num_classes
+        pretrained=pretrained,
+        num_handedness=num_handedness,
+        num_presence=num_presence,
     )
 
 

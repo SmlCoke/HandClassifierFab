@@ -1,14 +1,10 @@
-"""Tests for ONNX export functionality.
-
-These tests require onnx and onnxruntime to be installed.
-"""
+"""Tests for ONNX export of dual-head model."""
 
 import os
 import pytest
 import torch
 import numpy as np
 
-# Skip all tests if onnx/onnxruntime not available
 onnx = pytest.importorskip("onnx")
 ort = pytest.importorskip("onnxruntime")
 
@@ -17,7 +13,7 @@ from models.factory import build_model
 
 @pytest.fixture
 def model():
-    m = build_model("mobilenet_v3_small", pretrained=False, num_classes=2)
+    m = build_model("mobilenet_v3_small", pretrained=False)
     m.eval()
     return m
 
@@ -28,66 +24,86 @@ def dummy_input():
 
 
 def test_export_and_verify(model, dummy_input, tmp_path):
-    """Export model to ONNX and verify output matches PyTorch."""
+    """Export dual-head model to ONNX and verify outputs."""
     onnx_path = str(tmp_path / "test_model.onnx")
 
-    # Export
     torch.onnx.export(
         model, dummy_input, onnx_path,
-        input_names=["input"], output_names=["output"],
-        dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
+        input_names=["input"],
+        output_names=["handedness", "hand_presence"],
+        dynamic_axes={
+            "input": {0: "batch"},
+            "handedness": {0: "batch"},
+            "hand_presence": {0: "batch"},
+        },
         opset_version=13,
     )
 
     assert os.path.exists(onnx_path)
 
-    # Verify ONNX model structure
     onnx_model = onnx.load(onnx_path)
     onnx.checker.check_model(onnx_model)
 
-    # Run inference with onnxruntime
     session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
-    onnx_output = session.run(["output"], {"input": dummy_input.numpy()})[0]
+    onnx_outputs = session.run(
+        ["handedness", "hand_presence"],
+        {"input": dummy_input.numpy()},
+    )
 
-    # Run PyTorch inference
     with torch.no_grad():
-        torch_output = model(dummy_input).numpy()
+        torch_out = model(dummy_input)
 
-    # Compare outputs
-    np.testing.assert_allclose(onnx_output, torch_output, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(
+        onnx_outputs[0], torch_out["handedness"].numpy(), rtol=1e-4, atol=1e-4
+    )
+    np.testing.assert_allclose(
+        onnx_outputs[1], torch_out["hand_presence"].numpy(), rtol=1e-4, atol=1e-4
+    )
 
 
 def test_export_dynamic_batch(model, dummy_input, tmp_path):
-    """Test that dynamic batch export handles different batch sizes."""
+    """Test dynamic batch export handles different batch sizes."""
     onnx_path = str(tmp_path / "test_dynamic.onnx")
 
     torch.onnx.export(
         model, dummy_input, onnx_path,
-        input_names=["input"], output_names=["output"],
+        input_names=["input"],
+        output_names=["handedness", "hand_presence"],
         dynamic_axes={
-            "input": {0: "batch", 2: "height", 3: "width"},
-            "output": {0: "batch"},
+            "input": {0: "batch"},
+            "handedness": {0: "batch"},
+            "hand_presence": {0: "batch"},
         },
         opset_version=13,
     )
 
     session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
 
-    # Test batch size 3
     batch_input = torch.randn(3, 1, 256, 256)
-    onnx_output = session.run(["output"], {"input": batch_input.numpy()})[0]
-    assert onnx_output.shape == (3, 2)
+    h, p = session.run(
+        ["handedness", "hand_presence"],
+        {"input": batch_input.numpy()},
+    )
+    assert h.shape == (3, 2)
+    assert p.shape == (3, 2)
 
 
 def test_export_opset_compatibility(model, dummy_input, tmp_path):
-    """Test that opset 13 and 14 both work."""
+    """Test that opset 13 and 14 both work for dual-head."""
     for opset in [13, 14]:
         onnx_path = str(tmp_path / f"test_opset{opset}.onnx")
         torch.onnx.export(
             model, dummy_input, onnx_path,
-            input_names=["input"], output_names=["output"],
+            input_names=["input"],
+            output_names=["handedness", "hand_presence"],
             opset_version=opset,
         )
-        session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
-        out = session.run(["output"], {"input": dummy_input.numpy()})[0]
-        assert out.shape == (1, 2)
+        session = ort.InferenceSession(
+            onnx_path, providers=["CPUExecutionProvider"]
+        )
+        h, p = session.run(
+            ["handedness", "hand_presence"],
+            {"input": dummy_input.numpy()},
+        )
+        assert h.shape == (1, 2)
+        assert p.shape == (1, 2)

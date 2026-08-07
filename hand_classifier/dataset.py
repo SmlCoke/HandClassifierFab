@@ -1,4 +1,7 @@
-"""PyTorch Dataset, transforms, and data splitting utilities."""
+"""PyTorch Dataset, transforms, and data splitting for dual-head classifier.
+
+Each sample returns (image, handedness_label, presence_label).
+"""
 
 import json
 import random
@@ -17,7 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 class HandROIDataset(Dataset):
-    """PyTorch Dataset for single-channel Hand ROI images."""
+    """PyTorch Dataset for dual-head Hand ROI classification.
+
+    Returns:
+        tuple: (image, handedness_label, presence_label)
+          - handedness_label: -1 (ignore), 0 (Left), 1 (Right)
+          - presence_label: 0 (no_hand) or 1 (has_hand)
+    """
 
     def __init__(self, samples, transform=None, flip_prob=0.0):
         self.samples = samples
@@ -29,19 +38,20 @@ class HandROIDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
-        # PIL Image, mode 'L' (single-channel grayscale)
         image = Image.open(sample["image_path"])
-        label = sample["label"]
+        handedness = sample["handedness_label"]
+        presence = sample["presence_label"]
 
-        # Apply horizontal flip with label swap BEFORE tensor conversion
+        # Horizontal flip with label swap (only for positive handedness)
         if self.flip_prob > 0 and random.random() < self.flip_prob:
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
-            label = 1 - label
+            if handedness >= 0:
+                handedness = 1 - handedness  # Swap 0↔1
 
         if self.transform:
             image = self.transform(image)
 
-        return image, label
+        return image, handedness, presence
 
 
 def get_transforms(is_train, config=None):
@@ -86,10 +96,10 @@ def get_transforms(is_train, config=None):
 def split_dataset(samples, config):
     """Split samples into train/val (and optionally test) sets.
 
-    Splits are per-source stratified to maintain label distribution.
+    Splits preserve presence_label distribution per source.
 
     Args:
-        samples: List of sample dicts with 'image_path', 'label', 'source'.
+        samples: List of sample dicts.
         config: Full config dict.
 
     Returns:
@@ -101,7 +111,6 @@ def split_dataset(samples, config):
     test_ratio = split_cfg.get("test_ratio", 0.0)
     stratified = split_cfg.get("stratified", True)
 
-    # Group by source
     by_source = defaultdict(list)
     for s in samples:
         by_source[s["source"]].append(s)
@@ -116,10 +125,9 @@ def split_dataset(samples, config):
 
         remaining = source_samples
 
-        # First split off test if requested
         if test_ratio > 0 and n >= 3:
             if stratified:
-                labels = [s["label"] for s in remaining]
+                labels = [s["presence_label"] for s in remaining]
                 sss = StratifiedShuffleSplit(
                     n_splits=1, test_size=test_ratio, random_state=seed
                 )
@@ -133,11 +141,10 @@ def split_dataset(samples, config):
             test_samples.extend([remaining[i] for i in test_idx])
             remaining = [remaining[i] for i in trainval_idx]
 
-        # Split train/val
         n_remain = len(remaining)
         if val_ratio > 0 and n_remain >= 2:
             if stratified:
-                labels = [s["label"] for s in remaining]
+                labels = [s["presence_label"] for s in remaining]
                 sss = StratifiedShuffleSplit(
                     n_splits=1, test_size=val_ratio, random_state=seed
                 )
@@ -165,14 +172,23 @@ def save_split_info(train_samples, val_samples, test_samples, output_path):
     def _summarize(split_samples):
         if not split_samples:
             return {"total": 0}
-        sources = defaultdict(lambda: {"Left": 0, "Right": 0, "total": 0})
+        sources = defaultdict(lambda: {
+            "Left": 0, "Right": 0, "no_hand": 0, "unknown_hand": 0, "total": 0
+        })
         for s in split_samples:
             src = s["source"]
-            sources[src][s["label"] == 1 and "Right" or "Left"] += 1
+            if s["presence_label"] == 0:
+                sources[src]["no_hand"] += 1
+            elif s["handedness_label"] == 0:
+                sources[src]["Left"] += 1
+            elif s["handedness_label"] == 1:
+                sources[src]["Right"] += 1
+            elif s["handedness_label"] == -1:
+                sources[src]["unknown_hand"] += 1
             sources[src]["total"] += 1
         return {
             "total": len(split_samples),
-            "per_source": dict(sources),
+            "per_source": {k: dict(v) for k, v in sources.items()},
         }
 
     info = {
@@ -185,17 +201,24 @@ def save_split_info(train_samples, val_samples, test_samples, output_path):
     logger.info("Split info saved to %s", output_path)
 
 
-def compute_class_weights(train_samples, num_classes=2):
-    """Compute balanced class weights (inverse frequency, normalized).
+def compute_class_weights(train_samples, num_classes=2, task="handedness"):
+    """Compute balanced class weights for a specific task.
 
     Args:
         train_samples: List of training sample dicts.
         num_classes: Number of classes.
+        task: "handedness" or "hand_presence".
 
     Returns:
         torch.Tensor: Class weights of shape (num_classes,).
     """
-    labels = np.array([s["label"] for s in train_samples])
+    if task == "handedness":
+        labels = [s["handedness_label"] for s in train_samples
+                  if s["handedness_label"] >= 0]
+    else:
+        labels = [s["presence_label"] for s in train_samples]
+
+    labels = np.array(labels)
     class_counts = np.bincount(labels, minlength=num_classes).astype(np.float64)
     class_counts = np.maximum(class_counts, 1.0)
     weights = 1.0 / class_counts

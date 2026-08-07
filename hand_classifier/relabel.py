@@ -1,4 +1,4 @@
-"""CVAT XML relabeling: replace unknown_handedness with predicted Left/Right.
+"""CVAT XML relabeling: predict handedness + hand_presence, update tags.
 
 Uses a byte-preserving regex approach that maintains all whitespace,
 skeleton/points content, and self-closing vs multi-line styles verbatim.
@@ -20,12 +20,11 @@ import onnxruntime as ort
 logger = logging.getLogger(__name__)
 
 CLASS_NAMES = {0: "Left", 1: "Right"}
+PRESENCE_NAMES = {0: "no_hand", 1: "has_hand"}
 
-# Regex to match <image ... name="xxx.png" ...> blocks up to </image>
 _IMAGE_BLOCK_RE = re.compile(
     r'(<image\s[^>]*?name="([^"]*)"[^>]*>.*?</image>)', re.DOTALL
 )
-# Regex to find the tag attribute to replace
 _TAG_LABEL_RE = re.compile(
     r'(<tag\s[^>]*?)label="unknown_handedness"'
     r'([^>]*(?:/>|>.*?</tag>))',
@@ -35,19 +34,16 @@ _TAG_LABEL_RE = re.compile(
 
 def _load_image(img_path):
     """Load and preprocess a single ROI image for inference."""
-    image = Image.open(img_path)  # 'L' mode, grayscale
+    image = Image.open(img_path)
     transform = T.Compose([
         T.ToTensor(),
         T.Normalize(mean=[0.485], std=[0.229]),
     ])
-    return transform(image).unsqueeze(0)  # (1, 1, 256, 256)
+    return transform(image).unsqueeze(0)
 
 
 def relabel_cvat_xml(xml_path, model_path, output_path, images_dir=None):
-    """Replace unknown_handedness tags with predicted Left/Right labels.
-
-    Uses byte-preserving regex: all content outside the tag label attribute
-    (skeleton, points, whitespace, formatting) is left unchanged.
+    """Replace unknown_handedness tags with predicted labels (handedness + presence).
 
     Args:
         xml_path: Path to the input CVAT XML (usually cvat_autolabel.xml).
@@ -56,7 +52,7 @@ def relabel_cvat_xml(xml_path, model_path, output_path, images_dir=None):
         images_dir: Directory containing images (default: xml_path's ../images).
 
     Returns:
-        dict: Statistics including total, Left count, Right count, errors.
+        dict: Statistics.
     """
     xml_path = Path(xml_path)
     if images_dir is None:
@@ -64,86 +60,75 @@ def relabel_cvat_xml(xml_path, model_path, output_path, images_dir=None):
     else:
         images_dir = Path(images_dir)
 
-    # Load ONNX model
     session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
-    input_name = session.get_inputs()[0].name
 
-    # Read original XML
     with open(xml_path, "r", encoding="utf-8") as f:
         xml_content = f.read()
 
-    # Find all image blocks
-    stats = {"total": 0, "Left": 0, "Right": 0, "errors": 0}
+    stats = {"total": 0, "Left": 0, "Right": 0, "no_hand": 0, "errors": 0}
 
     def _replace_tag(match):
-        nonlocal stats
         full_block = match.group(1)
         img_name = match.group(2)
         basename = os.path.basename(img_name)
         img_path = images_dir / basename
 
-        # Find the tag element in this block
         tag_match = _TAG_LABEL_RE.search(full_block)
         if not tag_match:
-            return full_block  # No unknown_handedness tag, leave as-is
+            return full_block
 
         if not img_path.exists():
             stats["errors"] += 1
-            logger.warning("Image not found: %s", img_path)
             return full_block
 
-        # Run inference
         try:
             input_tensor = _load_image(str(img_path))
-            output = session.run(["output"], {input_name: input_tensor.numpy()})[0]
-            pred = int(np.argmax(output, axis=1)[0])
-            label = CLASS_NAMES[pred]
+            outputs = session.run(
+                ["handedness", "hand_presence"],
+                {"input": input_tensor.numpy()},
+            )
+            h_pred = int(np.argmax(outputs[0], axis=1)[0])
+            p_pred = int(np.argmax(outputs[1], axis=1)[0])
         except Exception as e:
             stats["errors"] += 1
             logger.warning("Inference error for %s: %s", basename, e)
             return full_block
 
         stats["total"] += 1
-        if label == "Left":
-            stats["Left"] += 1
+        if p_pred == 0:
+            # No hand: write no_hand, don't set handedness
+            label_str = "no_hand"
+            stats["no_hand"] += 1
         else:
-            stats["Right"] += 1
+            # Has hand: write Left/Right
+            label_str = CLASS_NAMES.get(h_pred, "unknown_handedness")
+            if h_pred == 0:
+                stats["Left"] += 1
+            else:
+                stats["Right"] += 1
 
-        # Replace label in this block
         new_block = _TAG_LABEL_RE.sub(
-            rf'\1label="{label}"\2', full_block
+            rf'\1label="{label_str}"\2', full_block
         )
         return new_block
 
-    # Process all image blocks
     new_content = _IMAGE_BLOCK_RE.sub(_replace_tag, xml_content)
 
-    # Write output
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
     logger.info(
-        "Relabeled %s: total=%d, Left=%d, Right=%d, errors=%d",
+        "Relabeled %s: total=%d, Left=%d, Right=%d, no_hand=%d, errors=%d",
         xml_path.name, stats["total"], stats["Left"],
-        stats["Right"], stats["errors"],
+        stats["Right"], stats["no_hand"], stats["errors"],
     )
-
     return stats
 
 
 def compute_agreement(xml_pred_path, xml_gold_path, images_dir=None):
-    """Compute agreement rate between predicted and gold-standard labels.
-
-    Args:
-        xml_pred_path: Path to the relabeled XML.
-        xml_gold_path: Path to the cvat_reviewed.xml (gold).
-        images_dir: Images directory for resolving paths.
-
-    Returns:
-        dict: Agreement statistics.
-    """
+    """Compute agreement rate between predicted and gold-standard labels."""
     import xml.etree.ElementTree as ET
 
     pred_tree = ET.parse(xml_pred_path)
@@ -152,21 +137,14 @@ def compute_agreement(xml_pred_path, xml_gold_path, images_dir=None):
     if images_dir is None:
         images_dir = Path(xml_pred_path).parent / "images"
 
-    # Build gold lookup by basename
     gold_labels = {}
     for img_elem in gold_tree.findall("image"):
         basename = os.path.basename(img_elem.get("name"))
         tag = img_elem.find("tag")
         if tag is not None:
             label = tag.get("label", "")
-            if label in ("Left", "Right"):
+            if label in ("Left", "Right", "no_hand"):
                 gold_labels[basename] = label
-
-    # Compare
-    total = 0
-    agree = 0
-    only_pred = 0
-    only_gold = 0
 
     pred_labels = {}
     for img_elem in pred_tree.findall("image"):
@@ -174,9 +152,10 @@ def compute_agreement(xml_pred_path, xml_gold_path, images_dir=None):
         tag = img_elem.find("tag")
         if tag is not None:
             label = tag.get("label", "")
-            if label in ("Left", "Right"):
+            if label in ("Left", "Right", "no_hand"):
                 pred_labels[basename] = label
 
+    total, agree, only_pred, only_gold = 0, 0, 0, 0
     for basename, pred_label in pred_labels.items():
         if basename in gold_labels:
             total += 1
@@ -197,8 +176,7 @@ def compute_agreement(xml_pred_path, xml_gold_path, images_dir=None):
 
     return {
         "total_compared": total,
-        "agree": agree,
-        "disagree": total - agree,
+        "agree": agree, "disagree": total - agree,
         "agreement_rate": round(agreement, 6),
         "only_in_pred": only_pred,
         "only_in_gold": only_gold,

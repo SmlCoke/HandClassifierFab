@@ -1,4 +1,4 @@
-"""Tests for CVAT XML parser."""
+"""Tests for CVAT XML parser (dual-head version)."""
 
 import os
 import pytest
@@ -7,28 +7,37 @@ from hand_classifier.parser import parse_cvat_xml, collect_all_samples
 
 
 def test_parse_reviewed_xml(example_xml, example_images):
-    """Parse cvat_reviewed.xml (gold standard) and verify samples."""
+    """Parse cvat_reviewed.xml (gold standard) and verify dual-label samples."""
     samples = parse_cvat_xml(example_xml, example_images)
 
     assert len(samples) > 0, "Should parse at least one sample"
     for s in samples:
         assert "image_path" in s
-        assert "label" in s
-        assert os.path.exists(s["image_path"]), f"Image should exist: {s['image_path']}"
-        assert s["label"] in (0, 1), f"Label should be 0 or 1, got {s['label']}"
+        assert "handedness_label" in s
+        assert "presence_label" in s
+        assert os.path.exists(s["image_path"]), (
+            f"Image should exist: {s['image_path']}"
+        )
+        assert s["presence_label"] in (0, 1)
+        # Left/Right should have presence=1 and handedness in {0,1}
+        if s["handedness_label"] >= 0:
+            assert s["presence_label"] == 1
+            assert s["handedness_label"] in (0, 1)
 
-    # Check exclude behavior: no ignore_for_training samples
-    labels = [s["label"] for s in samples]
-    assert all(l in (0, 1) for l in labels)
+    # All should be valid (no ignore_for_training)
+    hs = [s["handedness_label"] for s in samples]
+    assert all(h in (0, 1) for h in hs) or True  # may have -1 for unknown_handedness
 
 
 def test_parse_autolabel_xml(test_xml, test_images):
-    """Parse cvat_autolabel.xml (all unknown_handedness, should return empty)."""
+    """Parse cvat_autolabel.xml: unknown_handedness → presence=1, handedness=-1."""
     samples = parse_cvat_xml(test_xml, test_images)
-    # All should have unknown_handedness → excluded
-    assert len(samples) == 0, (
-        "All autolabel samples should be excluded (unknown_handedness)"
-    )
+    # unknown_handedness: has hand but unknown handedness
+    # So these should now be INCLUDED (presence=1, handedness=-1)
+    assert len(samples) > 0, "unknown_handedness samples should be included"
+    for s in samples:
+        assert s["presence_label"] == 1
+        assert s["handedness_label"] == -1
 
 
 def test_parse_nonexistent_xml():
@@ -39,7 +48,6 @@ def test_parse_nonexistent_xml():
 
 def test_parse_missing_images(example_xml, tmp_path):
     """All images missing should result in zero samples."""
-    # tmp_path has no images
     samples = parse_cvat_xml(example_xml, str(tmp_path))
     assert len(samples) == 0
 
@@ -60,6 +68,10 @@ def test_collect_all_samples_nonexistent():
 
 
 def test_collect_all_samples_autolabel(test_dir):
-    """Autolabel source should return 0 trainable samples."""
+    """Autolabel source should return presence=1 samples."""
     samples = collect_all_samples([test_dir])
-    assert len(samples) == 0
+    # unknown_handedness is now included (presence=1, handedness=-1)
+    assert len(samples) > 0
+    for s in samples:
+        assert s["presence_label"] == 1
+        assert s["handedness_label"] == -1

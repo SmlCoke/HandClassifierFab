@@ -1,13 +1,9 @@
-"""Training loop with AMP, warmup, cosine annealing, and early stopping."""
+"""Training loop for dual-head hand classifier with multi-task loss."""
 
-import os
 import json
 import logging
 import time
 from pathlib import Path
-
-import numpy as np
-from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -16,13 +12,13 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import (
     CosineAnnealingLR, LinearLR, SequentialLR,
 )
+from tqdm import tqdm
 
 from hand_classifier.dataset import (
     HandROIDataset, get_transforms, compute_class_weights,
 )
 from hand_classifier.parser import collect_all_samples
 from hand_classifier.dataset import split_dataset, save_split_info
-from hand_classifier.evaluator import evaluate as run_evaluation
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +54,7 @@ def _create_dataloaders(train_samples, val_samples, config):
 
 
 def train(config):
-    """Run the full training pipeline.
+    """Run the full training pipeline for dual-head model.
 
     Args:
         config: Configuration dict.
@@ -73,7 +69,6 @@ def train(config):
     val_sources = data_cfg.get("val_sources", [])
 
     if val_sources:
-        # Pre-defined val sources: collect separately, exclude from train
         val_samples = collect_all_samples(val_sources)
         val_source_names = set(s["source"] for s in val_samples)
         all_samples = collect_all_samples(train_sources)
@@ -86,11 +81,14 @@ def train(config):
             len(val_source_names), ", ".join(sorted(val_source_names)),
         )
     else:
-        # Split from train sources
         all_samples = collect_all_samples(train_sources)
         train_samples, val_samples, test_samples = split_dataset(
             all_samples, config
         )
+
+    # Log per-task counts
+    _log_sample_counts(train_samples, "Train")
+    _log_sample_counts(val_samples, "Val")
 
     # Save split info
     paths_cfg = config.get("paths", {})
@@ -113,7 +111,8 @@ def train(config):
     model = build_model(
         architecture=model_cfg["architecture"],
         pretrained=model_cfg.get("pretrained", True),
-        num_classes=model_cfg.get("num_classes", 2),
+        num_handedness=model_cfg.get("num_handedness", 2),
+        num_presence=model_cfg.get("num_presence", 2),
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -125,28 +124,40 @@ def train(config):
         train_samples, val_samples, config
     )
 
-    # --- Loss, optimizer, scheduler ---
+    # --- Losses ---
     train_cfg = config.get("training", {})
+    hp_cfg = config.get("hand_presence", {})
     class_weights_cfg = train_cfg.get("class_weights", "balanced")
 
     if class_weights_cfg == "balanced":
-        class_weights = compute_class_weights(train_samples, num_classes=2).to(device)
+        h_weights = compute_class_weights(
+            train_samples, num_classes=2, task="handedness"
+        ).to(device)
+        p_weights = compute_class_weights(
+            train_samples, num_classes=2, task="hand_presence"
+        ).to(device)
     elif class_weights_cfg is not None:
-        class_weights = torch.tensor(class_weights_cfg, dtype=torch.float32).to(device)
+        h_weights = torch.tensor(class_weights_cfg, dtype=torch.float32).to(device)
+        p_weights = h_weights
     else:
-        class_weights = None
+        h_weights = p_weights = None
 
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion_h = nn.CrossEntropyLoss(weight=h_weights, ignore_index=-1)
+    criterion_p = nn.CrossEntropyLoss(weight=p_weights)
 
-    # Differential learning rates
+    h_loss_weight = hp_cfg.get("loss_weight", 1.0)
+    p_loss_weight = hp_cfg.get("loss_weight", 1.0)
+
+    # --- Optimizer ---
     lr = train_cfg.get("learning_rate", 1e-4)
     head_lr_mult = train_cfg.get("head_lr_multiplier", 10)
     wd = train_cfg.get("weight_decay", 1e-4)
 
+    # Separate head params (both heads get higher LR)
     head_params = []
     backbone_params = []
     for name, param in model.named_parameters():
-        if "classifier" in name:
+        if "head" in name or "classifier" in name:
             head_params.append(param)
         else:
             backbone_params.append(param)
@@ -160,7 +171,6 @@ def train(config):
     warmup_epochs = train_cfg.get("warmup_epochs", 5)
     use_amp = train_cfg.get("amp", True) and device.type == "cuda"
 
-    # Cosine annealing after warmup
     if warmup_epochs > 0 and warmup_epochs < epochs:
         warmup_scheduler = LinearLR(
             optimizer, start_factor=0.1, end_factor=1.0,
@@ -182,7 +192,6 @@ def train(config):
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     metrics_dir = Path(paths_cfg.get("metrics_dir", "outputs/train"))
     metrics_dir.mkdir(parents=True, exist_ok=True)
-
     metrics_file = metrics_dir / "metrics.jsonl"
     scaler = GradScaler(enabled=use_amp)
 
@@ -195,65 +204,103 @@ def train(config):
 
     for epoch in range(1, epochs + 1):
         model.train()
-        train_loss = 0.0
-        train_correct = 0
+        train_loss_total = 0.0
+        train_loss_h = 0.0
+        train_loss_p = 0.0
+        train_correct_h = 0
+        train_total_h = 0
+        train_correct_p = 0
         train_total = 0
         t0 = time.time()
 
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{epochs}", leave=False)
-        for images, labels in pbar:
+        for images, h_labels, p_labels in pbar:
             images = images.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
+            h_labels = h_labels.to(device, non_blocking=True)
+            p_labels = p_labels.to(device, non_blocking=True)
 
             optimizer.zero_grad()
 
             with autocast(enabled=use_amp):
                 outputs = model(images)
-                loss = criterion(outputs, labels)
+                loss_h = criterion_h(outputs["handedness"], h_labels)
+                loss_p = criterion_p(outputs["hand_presence"], p_labels)
+                loss = h_loss_weight * loss_h + p_loss_weight * loss_p
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
 
-            train_loss += loss.item() * images.size(0)
-            _, predicted = outputs.max(1)
-            train_correct += predicted.eq(labels).sum().item()
+            train_loss_total += loss.item() * images.size(0)
+            train_loss_h += loss_h.item() * images.size(0)
+            train_loss_p += loss_p.item() * images.size(0)
+
+            # Handedness accuracy (only on valid labels)
+            valid_h = h_labels >= 0
+            if valid_h.any():
+                _, pred_h = outputs["handedness"].max(1)
+                train_correct_h += pred_h[valid_h].eq(
+                    h_labels[valid_h]
+                ).sum().item()
+                train_total_h += valid_h.sum().item()
+
+            # Presence accuracy (on all)
+            _, pred_p = outputs["hand_presence"].max(1)
+            train_correct_p += pred_p.eq(p_labels).sum().item()
             train_total += images.size(0)
 
-            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            pbar.set_postfix({
+                "loss": f"{loss.item():.4f}",
+                "h": f"{loss_h.item():.4f}",
+                "p": f"{loss_p.item():.4f}",
+            })
 
         scheduler.step()
 
-        train_loss_epoch = train_loss / max(train_total, 1)
-        train_acc = train_correct / max(train_total, 1)
+        n = max(train_total, 1)
+        nh = max(train_total_h, 1)
+        train_metrics = {
+            "loss": train_loss_total / n,
+            "loss_h": train_loss_h / n,
+            "loss_p": train_loss_p / n,
+            "acc_h": round(train_correct_h / nh, 6) if train_total_h > 0 else None,
+            "acc_p": round(train_correct_p / n, 6),
+        }
 
         # Validation
-        val_metrics = _validate(model, val_loader, criterion, device, use_amp)
+        val_metrics = _validate(model, val_loader, device, use_amp,
+                                criterion_h, criterion_p,
+                                h_loss_weight, p_loss_weight)
 
         current_lr = optimizer.param_groups[0]["lr"]
         elapsed = time.time() - t0
 
-        metrics = {
+        log_msg = (
+            f"Epoch {epoch}/{epochs} | "
+            f"train_loss={train_metrics['loss']:.4f} "
+            f"(h={train_metrics['loss_h']:.4f} p={train_metrics['loss_p']:.4f}) | "
+            f"val_loss={val_metrics['loss']:.4f} "
+            f"val_acc_h={val_metrics.get('acc_h')} val_acc_p={val_metrics['acc_p']:.4f} | "
+            f"lr={current_lr:.2e} | time={elapsed:.1f}s"
+        )
+        logger.info(log_msg)
+
+        epoch_metrics = {
             "epoch": epoch,
-            "train_loss": round(train_loss_epoch, 6),
-            "train_acc": round(train_acc, 6),
+            "train_loss": round(train_metrics["loss"], 6),
+            "train_loss_h": round(train_metrics["loss_h"], 6),
+            "train_loss_p": round(train_metrics["loss_p"], 6),
+            "train_acc_h": train_metrics["acc_h"],
+            "train_acc_p": train_metrics["acc_p"],
             "val_loss": round(val_metrics["loss"], 6),
-            "val_acc": round(val_metrics["acc"], 6),
+            "val_acc_h": val_metrics.get("acc_h"),
+            "val_acc_p": round(val_metrics["acc_p"], 6),
             "lr": round(current_lr, 8),
             "time_s": round(elapsed, 1),
         }
-        logger.info(
-            "Epoch %d/%d | train_loss=%.4f train_acc=%.4f | "
-            "val_loss=%.4f val_acc=%.4f | lr=%.2e | time=%.1fs",
-            epoch, epochs, train_loss_epoch, train_acc,
-            val_metrics["loss"], val_metrics["acc"], current_lr, elapsed,
-        )
-
-        # Save metrics
         with open(metrics_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(metrics, ensure_ascii=False) + "\n")
+            f.write(json.dumps(epoch_metrics, ensure_ascii=False) + "\n")
 
-        # Checkpointing
         is_best = val_metrics["loss"] < best_val_loss
         if is_best:
             best_val_loss = val_metrics["loss"]
@@ -262,18 +309,18 @@ def train(config):
             torch.save(
                 {"epoch": epoch, "model_state_dict": model.state_dict(),
                  "optimizer_state_dict": optimizer.state_dict(),
-                 "val_loss": val_metrics["loss"], "val_acc": val_metrics["acc"],
+                 "val_loss": val_metrics["loss"],
+                 "val_acc_h": val_metrics.get("acc_h"),
+                 "val_acc_p": val_metrics["acc_p"],
                  "config": config},
                 checkpoint_dir / "best.pth",
             )
         else:
             no_improve += 1
 
-        # Save latest
         torch.save(
             {"epoch": epoch, "model_state_dict": model.state_dict(),
-             "optimizer_state_dict": optimizer.state_dict(),
-             "config": config},
+             "optimizer_state_dict": optimizer.state_dict(), "config": config},
             checkpoint_dir / "last.pth",
         )
 
@@ -288,28 +335,61 @@ def train(config):
     return str(checkpoint_dir / "best.pth")
 
 
-def _validate(model, dataloader, criterion, device, use_amp):
-    """Run validation and return metrics dict."""
+def _validate(model, dataloader, device, use_amp,
+              criterion_h, criterion_p, h_weight, p_weight):
+    """Run validation for dual-head model."""
     model.eval()
-    total_loss = 0.0
-    correct = 0
-    total = 0
+    total_loss = total_h = total_p = 0.0
+    correct_h = total_h_valid = 0
+    correct_p = total = 0
 
     with torch.no_grad():
-        for images, labels in dataloader:
+        for images, h_labels, p_labels in dataloader:
             images = images.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
+            h_labels = h_labels.to(device, non_blocking=True)
+            p_labels = p_labels.to(device, non_blocking=True)
 
             with autocast(enabled=use_amp):
                 outputs = model(images)
-                loss = criterion(outputs, labels)
+                loss_h = criterion_h(outputs["handedness"], h_labels)
+                loss_p = criterion_p(outputs["hand_presence"], p_labels)
+                loss = h_weight * loss_h + p_weight * loss_p
 
-            total_loss += loss.item() * images.size(0)
-            _, predicted = outputs.max(1)
-            correct += predicted.eq(labels).sum().item()
-            total += images.size(0)
+            n = images.size(0)
+            total_loss += loss.item() * n
+            total_h += loss_h.item() * n
+            total_p += loss_p.item() * n
 
-    return {
-        "loss": total_loss / max(total, 1),
-        "acc": correct / max(total, 1),
+            valid_h = h_labels >= 0
+            if valid_h.any():
+                _, pred_h = outputs["handedness"].max(1)
+                correct_h += pred_h[valid_h].eq(
+                    h_labels[valid_h]
+                ).sum().item()
+                total_h_valid += valid_h.sum().item()
+
+            _, pred_p = outputs["hand_presence"].max(1)
+            correct_p += pred_p.eq(p_labels).sum().item()
+            total += n
+
+    n = max(total, 1)
+    result = {
+        "loss": total_loss / n,
+        "loss_h": total_h / n,
+        "loss_p": total_p / n,
+        "acc_p": correct_p / n,
     }
+    if total_h_valid > 0:
+        result["acc_h"] = round(correct_h / total_h_valid, 6)
+    return result
+
+
+def _log_sample_counts(samples, name):
+    """Log per-task sample counts."""
+    n_hand = sum(1 for s in samples if s["handedness_label"] >= 0)
+    n_pres = sum(1 for s in samples if s["presence_label"] == 1)
+    logger.info(
+        "%s: total=%d, handedness_valid=%d, has_hand=%d, no_hand=%d",
+        name, len(samples), n_hand, n_pres,
+        len(samples) - n_pres,
+    )
