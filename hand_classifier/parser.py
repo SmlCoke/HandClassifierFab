@@ -186,7 +186,7 @@ def collect_all_samples(source_dirs, negative_dirs=None):
                     s["source"] = source_name
                 all_samples.extend(samples)
             else:
-                logger.warning("Skipping %s: no images/ found", source_dir)
+                logger.debug("Skipping %s: no images/ or XML found", source_dir)
 
     # Collect from explicit negative dirs
     if negative_dirs:

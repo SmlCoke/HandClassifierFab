@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Print per-source label distribution statistics."""
+"""Print per-source label distribution statistics (dual-head version)."""
 
 import argparse
 import logging
@@ -41,35 +41,42 @@ def main():
 
     samples = collect_all_samples(source_dirs)
 
-    # Aggregate per source
-    per_source = defaultdict(lambda: {"Left": 0, "Right": 0, "total": 0})
+    per_source = defaultdict(
+        lambda: {"Left": 0, "Right": 0, "no_hand": 0, "unknown_hand": 0, "total": 0}
+    )
     for s in samples:
         src = s["source"]
         per_source[src]["total"] += 1
-        if s["label"] == 0:
+        if s["presence_label"] == 0:
+            per_source[src]["no_hand"] += 1
+        elif s["handedness_label"] == 0:
             per_source[src]["Left"] += 1
-        else:
+        elif s["handedness_label"] == 1:
             per_source[src]["Right"] += 1
+        elif s["handedness_label"] == -1:
+            per_source[src]["unknown_hand"] += 1
 
     print("\n=== Dataset Statistics ===\n")
-    total_left = 0
-    total_right = 0
-    total_all = 0
+    total_left = total_right = total_nohand = total_unknown = total_all = 0
 
     for src in sorted(per_source.keys()):
-        stats = per_source[src]
-        ratio = stats["Left"] / max(stats["Right"], 1)
+        st = per_source[src]
+        lr = st["Left"] / max(st["Right"], 1)
         print(
-            f"  {src}: total={stats['total']:5d}  "
-            f"Left={stats['Left']:5d}  Right={stats['Right']:5d}  "
-            f"L/R={ratio:.2f}"
+            f"  {src}: total={st['total']:5d}  "
+            f"Left={st['Left']:5d}  Right={st['Right']:5d}  "
+            f"no_hand={st['no_hand']:5d}  unknown={st['unknown_hand']:3d}  "
+            f"L/R={lr:.2f}"
         )
-        total_left += stats["Left"]
-        total_right += stats["Right"]
-        total_all += stats["total"]
+        total_left += st["Left"]
+        total_right += st["Right"]
+        total_nohand += st["no_hand"]
+        total_unknown += st["unknown_hand"]
+        total_all += st["total"]
 
+    lr = total_left / max(total_right, 1)
     print(f"\n  TOTAL: {total_all}  Left={total_left}  Right={total_right}  "
-          f"L/R={total_left / max(total_right, 1):.2f}\n")
+          f"no_hand={total_nohand}  unknown={total_unknown}  L/R={lr:.2f}\n")
 
     return 0
 
