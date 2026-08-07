@@ -52,9 +52,7 @@ def _evaluate_split(model, samples, config, device, split_name):
             loader, desc=f"Eval {split_name}", leave=False
         ):
             images = images.to(device)
-
-            with autocast(enabled=use_amp):
-                outputs = model(images)
+            outputs = model(images)  # No autocast: fp16 softmax → NaN
 
             h_prob = torch.softmax(outputs["handedness"], dim=1).cpu().numpy()
             p_prob = torch.softmax(outputs["hand_presence"], dim=1).cpu().numpy()

@@ -267,8 +267,8 @@ def train(config):
             "acc_p": round(train_correct_p / n, 6),
         }
 
-        # Validation
-        val_metrics = _validate(model, val_loader, device, use_amp,
+        # Validation (AMP disabled: fp16 softmax can produce NaN in loss)
+        val_metrics = _validate(model, val_loader, device, False,
                                 criterion_h, criterion_p,
                                 h_loss_weight, p_loss_weight)
 
