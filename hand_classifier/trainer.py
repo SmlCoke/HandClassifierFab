@@ -145,7 +145,7 @@ def train(config):
     criterion_h = nn.CrossEntropyLoss(weight=h_weights, ignore_index=-1)
     criterion_p = nn.CrossEntropyLoss(weight=p_weights)
 
-    h_loss_weight = hp_cfg.get("loss_weight", 1.0)
+    h_loss_weight = train_cfg.get("handedness_loss_weight", 1.0)
     p_loss_weight = hp_cfg.get("loss_weight", 1.0)
 
     # --- Optimizer ---
