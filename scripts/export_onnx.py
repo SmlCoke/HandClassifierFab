@@ -12,7 +12,7 @@ from hand_classifier import load_config, export_onnx
 def main():
     parser = argparse.ArgumentParser(description="Export hand classifier to ONNX")
     parser.add_argument(
-        "--config", "-c", default="configs/hand_classifier.yaml",
+        "--config", "-c", default="configs/export_onnx.yaml",
         help="Path to YAML config file",
     )
     parser.add_argument(

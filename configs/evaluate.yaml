@@ -1,0 +1,30 @@
+# HCF Evaluation Configuration
+# ===========================
+
+# Model architecture (must match the checkpoint)
+model:
+  architecture: "mobilenet_v3_small"
+  num_handedness: 2
+  num_presence: 2
+  input_channels: 1
+  pretrained: false
+
+# Data sources for evaluation
+data:
+  val_sources:
+    - ../autodl-tmp/DatasetFab/HCFEvalSource/complex-near-bright-random-test-s01-peak
+    - ../autodl-tmp/DatasetFab/HCFEvalSource/complex-mid-bright-random-val-s01-peak
+    - ../autodl-tmp/DatasetFab/HCFEvalSource/NegativeVal/*
+  test_sources: []
+
+# DataLoader settings (shared with training)
+training:
+  batch_size: 64
+  num_workers: 4
+  amp: false
+
+# Output paths
+paths:
+  checkpoint_dir: "../autodl-tmp/TrainFab/outputs/checkpoints"
+  metrics_dir: "../autodl-tmp/TrainFab/outputs/train"
+  splits_dir: "../autodl-tmp/TrainFab/outputs"

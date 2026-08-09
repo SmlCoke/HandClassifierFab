@@ -20,7 +20,7 @@ def main():
         description="Relabel CVAT XML with predicted handedness"
     )
     parser.add_argument(
-        "--config", "-c", default="configs/hand_classifier.yaml",
+        "--config", "-c", default="configs/cvat_label_test.yaml",
         help="Path to YAML config file",
     )
     parser.add_argument(

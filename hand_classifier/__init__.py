@@ -12,6 +12,7 @@ from hand_classifier.trainer import train
 from hand_classifier.evaluator import evaluate
 from hand_classifier.exporter import export_onnx
 from hand_classifier.relabel import relabel_cvat_xml, compute_agreement
+from hand_classifier.infer import run_inference
 
 __all__ = [
     "load_config",
@@ -28,4 +29,5 @@ __all__ = [
     "export_onnx",
     "relabel_cvat_xml",
     "compute_agreement",
+    "run_inference",
 ]

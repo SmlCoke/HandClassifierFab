@@ -14,7 +14,7 @@ def main():
         description="Print dataset label distribution statistics"
     )
     parser.add_argument(
-        "--config", "-c", default="configs/hand_classifier.yaml",
+        "--config", "-c", default="configs/train.yaml",
         help="Path to YAML config file",
     )
     parser.add_argument(

@@ -12,7 +12,7 @@ from hand_classifier import load_config, evaluate
 def main():
     parser = argparse.ArgumentParser(description="Evaluate hand classifier")
     parser.add_argument(
-        "--config", "-c", default="configs/hand_classifier.yaml",
+        "--config", "-c", default="configs/evaluate.yaml",
         help="Path to YAML config file",
     )
     parser.add_argument(

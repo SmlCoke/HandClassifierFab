@@ -1,26 +1,33 @@
-.PHONY: setup dataset-stats train evaluate export-onnx cvat-label-test test all clean
+.PHONY: setup dataset-stats train evaluate export-onnx cvat-label-test infer test all clean
 
-# Default configuration
-CONFIG ?= configs/hand_classifier.yaml
-CHECKPOINT ?= outputs/checkpoints/best.pth
+# Config files (one per functional target)
+TRAIN_CONFIG       ?= configs/train.yaml
+EVAL_CONFIG        ?= configs/evaluate.yaml
+EXPORT_CONFIG      ?= configs/export_onnx.yaml
+CVAT_CONFIG        ?= configs/cvat_label_test.yaml
+INFER_CONFIG       ?= configs/infer.yaml
+CHECKPOINT         ?= outputs/checkpoints/best.pth
 
 setup:
 	pip install -r requirements.txt
 
 dataset-stats:
-	python scripts/dataset_stats.py --config $(CONFIG)
+	python scripts/dataset_stats.py --config $(TRAIN_CONFIG)
 
 train:
-	python scripts/train.py --config $(CONFIG)
+	python scripts/train.py --config $(TRAIN_CONFIG)
 
 evaluate:
-	python scripts/evaluate.py --config $(CONFIG) --checkpoint $(CHECKPOINT)
+	python scripts/evaluate.py --config $(EVAL_CONFIG) --checkpoint $(CHECKPOINT)
 
 export-onnx:
-	python scripts/export_onnx.py --config $(CONFIG) --checkpoint $(CHECKPOINT)
+	python scripts/export_onnx.py --config $(EXPORT_CONFIG) --checkpoint $(CHECKPOINT)
 
 cvat-label-test:
-	python scripts/cvat_label_test.py --config $(CONFIG) --checkpoint $(CHECKPOINT)
+	python scripts/cvat_label_test.py --config $(CVAT_CONFIG) --checkpoint $(CHECKPOINT)
+
+infer:
+	python scripts/infer.py --config $(INFER_CONFIG)
 
 test:
 	python -m pytest tests/ -v

@@ -11,7 +11,7 @@ from hand_classifier import load_config, train
 def main():
     parser = argparse.ArgumentParser(description="Train hand classifier")
     parser.add_argument(
-        "--config", "-c", default="configs/hand_classifier.yaml",
+        "--config", "-c", default="configs/train.yaml",
         help="Path to YAML config file",
     )
     parser.add_argument(

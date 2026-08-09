@@ -1,0 +1,21 @@
+# HCF ONNX Export Configuration
+# =============================
+
+# Model architecture (must match the checkpoint)
+model:
+  architecture: "mobilenet_v3_small"
+  num_handedness: 2
+  num_presence: 2
+  input_channels: 1
+  pretrained: false
+
+# ONNX export settings
+export:
+  onnx_opset: 13
+  dynamic_batch: true
+
+# Output paths
+paths:
+  checkpoint_dir: "../autodl-tmp/TrainFab/outputs/checkpoints"
+  metrics_dir: "../autodl-tmp/TrainFab/outputs/train"
+  splits_dir: "../autodl-tmp/TrainFab/outputs"
