@@ -26,12 +26,12 @@ HCF 系统训练一个双头 MobileNetV3-Small 模型，共享 backbone，同时
 ### 命令
 
 ```bash
-python scripts/dataset_stats.py --config configs/hand_classifier.yaml
+python scripts/dataset_stats.py --config configs/train.yaml
 ```
 
 ### 输入
 
-- `configs/hand_classifier.yaml` 中 `data.train_sources` 指定的数据来源目录（位于服务器端）。
+- `configs/train.yaml` 中 `data.train_sources` 指定的数据来源目录（位于服务器端）。
 - 每个数据来源目录包含 `images/*.png` 和一个 CVAT XML 标注文件。
 
 ### 操作
@@ -55,12 +55,12 @@ python scripts/dataset_stats.py --config configs/hand_classifier.yaml
 ### 命令
 
 ```bash
-python scripts/train.py --config configs/hand_classifier.yaml
+python scripts/train.py --config configs/train.yaml
 ```
 
 ### 输入
 
-- `configs/hand_classifier.yaml` - 包含所有超参数。
+- `configs/train.yaml` - 包含所有训练超参数。
 - `autodl-tmp/DatasetFab/HCFTrainSource/*` 下的数据来源目录。
 
 ### 操作
@@ -100,7 +100,7 @@ python scripts/train.py --config configs/hand_classifier.yaml
 ### 命令
 
 ```bash
-python scripts/evaluate.py --config configs/hand_classifier.yaml [--checkpoint outputs/checkpoints/best.pth]
+python scripts/evaluate.py --config configs/evaluate.yaml [--checkpoint outputs/checkpoints/best.pth]
 ```
 
 ### 输入
@@ -128,7 +128,7 @@ python scripts/evaluate.py --config configs/hand_classifier.yaml [--checkpoint o
 ### 命令
 
 ```bash
-python scripts/export_onnx.py --config configs/hand_classifier.yaml [--checkpoint outputs/checkpoints/best.pth] [-o outputs/model.onnx]
+python scripts/export_onnx.py --config configs/export_onnx.yaml [--checkpoint outputs/checkpoints/best.pth] [-o outputs/model.onnx]
 ```
 
 ### 输入
@@ -159,7 +159,7 @@ python scripts/export_onnx.py --config configs/hand_classifier.yaml [--checkpoin
 ### 命令
 
 ```bash
-python scripts/cvat_label_test.py --config configs/hand_classifier.yaml [--checkpoint outputs/model.onnx] [--xml <path>]
+python scripts/cvat_label_test.py --config configs/cvat_label_test.yaml [--checkpoint outputs/model.onnx] [--xml <path>]
 ```
 
 ### 输入

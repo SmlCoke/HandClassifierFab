@@ -11,7 +11,11 @@
 ```
 HandClassifierFab/
 ├── configs/
-│   └── hand_classifier.yaml       # 主配置文件（所有超参数）
+│   ├── train.yaml                 # 训练配置（数据、超参数、增强）
+│   ├── evaluate.yaml              # 评估配置
+│   ├── export_onnx.yaml           # ONNX 导出配置
+│   ├── cvat_label_test.yaml       # CVAT 标签导出测试配置
+│   └── infer.yaml                 # 推理配置（负样本筛选）
 ├── data/
 │   ├── examples/
 │   │   └── dataset1/              # 数据集样例（供理解格式使用）
@@ -124,19 +128,22 @@ autodl-tmp/
 pip install -r requirements.txt
 
 # 查看数据集统计信息
-python scripts/dataset_stats.py --config configs/hand_classifier.yaml
+python scripts/dataset_stats.py --config configs/train.yaml
 
 # 训练
-python scripts/train.py --config configs/hand_classifier.yaml
+python scripts/train.py --config configs/train.yaml
 
 # 评估
-python scripts/evaluate.py --config configs/hand_classifier.yaml
+python scripts/evaluate.py --config configs/evaluate.yaml
 
 # 导出 ONNX
-python scripts/export_onnx.py --config configs/hand_classifier.yaml
+python scripts/export_onnx.py --config configs/export_onnx.yaml
 
 # CVAT 标签导出测试
-python scripts/cvat_label_test.py --config configs/hand_classifier.yaml
+python scripts/cvat_label_test.py --config configs/cvat_label_test.yaml
+
+# 推理：筛选无手负样本
+python scripts/infer.py --config configs/infer.yaml
 
 # 运行测试
 python -m pytest tests/ -v
@@ -151,6 +158,7 @@ make train           # 训练模型
 make evaluate        # 评估模型
 make export-onnx     # 导出 ONNX 模型
 make cvat-label-test # 测试 CVAT 自动标注标签替换
+make infer           # 推理：筛选低 hand_presence 负样本
 make test            # 运行全部单元测试
 make all             # test + train + evaluate + export-onnx + cvat-label-test
 make clean           # 清理 outputs/、__pycache__/、.pytest_cache/
@@ -158,13 +166,15 @@ make clean           # 清理 outputs/、__pycache__/、.pytest_cache/
 
 ## 配置说明
 
-编辑 `configs/hand_classifier.yaml` 可调整：
+配置文件按功能拆分，位于 `configs/` 目录下：
 
-- 数据来源路径与划分比例
-- 模型架构（`mobilenet_v3_small` / `mobilenet_v3_large`）
-- 训练超参数（批次大小、学习率、训练轮数等）
-- 数据增强策略
-- ONNX 导出参数
+| 文件 | 用途 |
+|------|------|
+| `train.yaml` | 数据来源、模型架构、训练超参数、数据增强 |
+| `evaluate.yaml` | 评估数据来源、模型架构 |
+| `export_onnx.yaml` | ONNX 导出参数 |
+| `cvat_label_test.yaml` | CVAT 标签导出测试配置 |
+| `infer.yaml` | 推理配置（ONNX 模型、输入/输出目录、阈值） |
 
 ## 数据来源格式
 
