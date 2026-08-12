@@ -48,6 +48,7 @@ We are developing a real-time sign language recognition system designed for low-
 
 - `docs\HCF_system\HCF_annotating_workflow.md`: Referred to as the "workflow" document; it explains the current system's workflow and procedures rather than serving merely as an operational manual. 
 - `docs\HCF_system\HCF_quick_start.md`: Referred to as the "quick_start" document; a simplified version of the "workflow" document containing instructions for executing the full process, designed for getting started quickly.
+- `docs\HCF_system\HCF_qa.md`: Referred to as the "qa" document; it is used to record questions related to this repository raised by users during conversations, along with their answers.
 
 ## IV. General Working Rules
 
@@ -63,10 +64,10 @@ We are developing a real-time sign language recognition system designed for low-
 - The "workflow" document records only the commands, content, and underlying principles for each operational step of the system; it is independent of the system's historical state, the training status of models on the server, the state of the server-side data warehouse, and the project's future plans. It is necessary to explain the command and input (including directory locations) for each step, the actions performed, the output (including directory locations), and the rationale behind parameter adjustments in the YAML configuration file. Please keep this principle in mind when making modifications.
 - The "quick_start" document is a simplified version of the "workflow" document; it contains only the commands for each operational step and omits explanations of the underlying principles. Include the name of the process stage for each step and briefly describe the inputs and outputs. Please keep this principle in mind when making modifications. 
 - The "current_status" document records the current state of the system and the server-side data warehouse. Please keep this principle in mind when making modifications.
+- The "qa" document is used to record questions regarding this repository raised by users during conversations, along with their corresponding answers. Unless the user explicitly requests that a specific Q&A exchange be recorded in the prompt, there is no need to modify this document during routine work.
 
-
-These three documents have distinct roles and independent content; each should avoid extensive discussion of the material covered in the others.
-These three documents serve as the primary interface documentation for the current repository and are critical; they must be kept synchronized whenever there are subsequent updates to code, configurations, or other documentation.
+These four documents have distinct roles and independent content; each should avoid extensive discussion of the material covered in the others.
+These four documents serve as the primary interface documentation for the current repository and are critical; Except "qa" document, they must be kept synchronized whenever there are subsequent updates to code, configurations, or other documentation.
 
 ### 4.3 Principle of simplification
 
