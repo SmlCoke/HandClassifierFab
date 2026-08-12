@@ -9,11 +9,10 @@ model:
   input_channels: 1
   pretrained: false
 
-# Data sources for evaluation
+# Data sources for evaluation (globs pick up new sources automatically)
 data:
   val_sources:
-    - ../autodl-tmp/DatasetFab/HCFEvalSource/complex-near-bright-random-test-s01-peak
-    - ../autodl-tmp/DatasetFab/HCFEvalSource/complex-mid-bright-random-val-s01-peak
+    - ../autodl-tmp/DatasetFab/HCFEvalSource/*
     - ../autodl-tmp/DatasetFab/HCFEvalSource/NegativeVal/*
   test_sources: []
 

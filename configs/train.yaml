@@ -6,9 +6,10 @@ data:
   train_sources:
     - ../autodl-tmp/DatasetFab/HCFTrainSource/*
     - ../autodl-tmp/DatasetFab/HCFTrainSource/NegativeTrain/*
+  # Glob patterns: new sources dropped into HCFEvalSource/ are picked
+  # up automatically on the next run (no config edit needed)
   val_sources:
-    - ../autodl-tmp/DatasetFab/HCFEvalSource/complex-near-bright-random-test-s01-peak
-    - ../autodl-tmp/DatasetFab/HCFEvalSource/complex-mid-bright-random-val-s01-peak
+    - ../autodl-tmp/DatasetFab/HCFEvalSource/*
     - ../autodl-tmp/DatasetFab/HCFEvalSource/NegativeVal/*
   test_sources: []
   split:
