@@ -4,15 +4,15 @@
 # Inference settings
 infer:
   # Path to the ONNX model file
-  onnx_model: "../autodl-tmp/TrainFab/model.onnx"
+  onnx_model: "assets/handedness-handpresence-0807/model.onnx"
 
   # Input directory: images (*.png, *.tiff, *.jpg, *.jpeg, *.bmp) are
   # scanned recursively from this path
-  input_dir: "../autodl-tmp/DatasetFab/HCFInferSource/"
+  input_dir: "D:\\CICIEC\\datasets\\DatesetFab\\GoldSource\\NegativeSamples\\0809-soar-enhance\\white-near-bright-random-train-s01-soar\\white-near-bright-random-train-s01-soar"
 
   # Output directory: images predicted as no_hand (hand_presence below
   # threshold) are copied here, preserving SHA256
-  output_dir: "../autodl-tmp/DatasetFab/HCFInferOutput/"
+  output_dir: "D:\\CICIEC\\datasets\\DatesetFab\\GoldSource\\NegativeSamples\\0809-soar-enhance\\white-near-bright-random-train-s01-soar\\negative"
 
   # Samples with has_hand probability below this threshold are
   # considered negative (no_hand) and copied to output_dir
