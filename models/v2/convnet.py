@@ -6,7 +6,7 @@ backbone:
 
   - ``v2_convnet_s``: standard 3x3 conv ResNet-style blocks + SE (~13M params)
   - ``v2_convnet_l``: wider/deeper standard conv blocks + SE (~64M params)
-  - ``v2_multibranch``: Inception-style multi-branch blocks + SE (~15M params)
+  - ``v2_multibranch``: Inception-style multi-branch blocks + SE (~10M params)
 
 Latency is intentionally sacrificed for accuracy.
 """
@@ -163,7 +163,7 @@ class MultiBranchNet(nn.Module):
 
 
 def v2_convnet_s(pretrained=False, num_handedness=2, num_presence=2):
-    """Standard-conv CNN, ~8M params (trained from scratch)."""
+    """Standard-conv CNN, ~13M params (trained from scratch)."""
     return ConvNet(
         widths=[64, 128, 256, 384], depths=[2, 3, 4, 3], stem_channels=48,
         num_handedness=num_handedness, num_presence=num_presence,
@@ -171,7 +171,7 @@ def v2_convnet_s(pretrained=False, num_handedness=2, num_presence=2):
 
 
 def v2_convnet_l(pretrained=False, num_handedness=2, num_presence=2):
-    """Standard-conv CNN, ~36M params (trained from scratch)."""
+    """Standard-conv CNN, ~64M params (trained from scratch)."""
     return ConvNet(
         widths=[96, 192, 384, 768], depths=[3, 4, 8, 4], stem_channels=64,
         num_handedness=num_handedness, num_presence=num_presence,
@@ -179,7 +179,7 @@ def v2_convnet_l(pretrained=False, num_handedness=2, num_presence=2):
 
 
 def v2_multibranch(pretrained=False, num_handedness=2, num_presence=2):
-    """Inception-style multi-branch CNN, ~15M params (trained from scratch)."""
+    """Inception-style multi-branch CNN, ~10M params (trained from scratch)."""
     return MultiBranchNet(
         widths=[128, 256, 512, 768], depths=[2, 3, 4, 3], stem_channels=64,
         num_handedness=num_handedness, num_presence=num_presence,
