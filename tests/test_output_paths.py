@@ -3,7 +3,9 @@
 import os
 from pathlib import Path
 
-from hand_classifier.config import resolve_output_paths, load_config
+from hand_classifier.config import (
+    resolve_output_paths, load_config, align_config_to_checkpoint,
+)
 
 
 def _p(*parts):
@@ -80,3 +82,78 @@ def test_configs_carry_output_root():
     for name in ["train", "evaluate", "export_onnx", "cvat_label_test"]:
         config = load_config(f"configs/{name}.yaml")
         assert config["paths"].get("output_root"), f"{name}.yaml missing output_root"
+
+
+# --- align_config_to_checkpoint ---
+
+def _ckpt(model_cfg, paths_cfg=None):
+    ckpt = {"epoch": 5, "model_state_dict": {}}
+    ckpt["config"] = {"model": dict(model_cfg)}
+    if paths_cfg is not None:
+        ckpt["config"]["paths"] = dict(paths_cfg)
+    return ckpt
+
+
+def test_align_auto_located_checkpoint():
+    """Config says v1/mobilenet_v3_small but the checkpoint was trained as
+    v2/v2_convnet_l: model AND output paths must follow the checkpoint."""
+    config = {
+        "model": {"version": "v1", "architecture": "mobilenet_v3_small"},
+        "paths": {"output_root": "/tmp/out"},
+    }
+    ckpt_paths = {
+        "checkpoint_dir": "/tmp/out/v2/v2_convnet_l/checkpoints",
+        "splits_dir": "/tmp/out/v2/v2_convnet_l",
+        "eval_dir": "/tmp/out/v2/v2_convnet_l/eval",
+        "onnx_path": "/tmp/out/v2/v2_convnet_l/model.onnx",
+    }
+    ckpt = _ckpt({"version": "v2", "architecture": "v2_convnet_l"}, ckpt_paths)
+
+    aligned, changed = align_config_to_checkpoint(config, ckpt)
+    assert changed is True
+    assert aligned["model"]["architecture"] == "v2_convnet_l"
+    assert aligned["paths"]["eval_dir"] == ckpt_paths["eval_dir"]
+    assert aligned["paths"]["onnx_path"] == ckpt_paths["onnx_path"]
+    # original config untouched
+    assert config["model"]["architecture"] == "mobilenet_v3_small"
+
+
+def test_align_explicit_checkpoint_also_follows_paths():
+    """Even an explicitly passed checkpoint must route outputs to the
+    checkpoint's own model directory (never to a different model's)."""
+    config = {
+        "model": {"version": "v1", "architecture": "mobilenet_v3_small"},
+        "paths": {"output_root": "/tmp/out"},
+    }
+    ckpt_paths = {
+        "eval_dir": "/tmp/out/v2/v2_hybrid_s/eval",
+        "onnx_path": "/tmp/out/v2/v2_hybrid_s/model.onnx",
+    }
+    ckpt = _ckpt({"version": "v2", "architecture": "v2_hybrid_s"}, ckpt_paths)
+
+    aligned, changed = align_config_to_checkpoint(config, ckpt)
+    assert changed is True
+    assert aligned["model"]["architecture"] == "v2_hybrid_s"
+    assert aligned["paths"]["eval_dir"] == ckpt_paths["eval_dir"]
+    assert aligned["paths"]["onnx_path"] == ckpt_paths["onnx_path"]
+
+
+def test_align_same_model_no_change():
+    config = {
+        "model": {"version": "v1", "architecture": "mobilenet_v3_small"},
+        "paths": {"output_root": "/tmp/out"},
+    }
+    ckpt = _ckpt({"version": "v1", "architecture": "mobilenet_v3_small"})
+    aligned, changed = align_config_to_checkpoint(config, ckpt)
+    assert changed is False
+    assert aligned is config
+
+
+def test_align_checkpoint_without_config_no_change():
+    config = {
+        "model": {"version": "v1", "architecture": "mobilenet_v3_small"},
+        "paths": {"output_root": "/tmp/out"},
+    }
+    aligned, changed = align_config_to_checkpoint(config, {"epoch": 1})
+    assert changed is False
+    assert aligned is config

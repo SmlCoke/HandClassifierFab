@@ -4,7 +4,6 @@
 import argparse
 import logging
 import sys
-from pathlib import Path
 
 from hand_classifier import load_config, evaluate, resolve_output_paths
 
@@ -39,12 +38,10 @@ def main():
     config = load_config(args.config)
     config = resolve_output_paths(config)
 
-    if args.output_dir is None:
-        paths_cfg = config.get("paths", {})
-        args.output_dir = paths_cfg.get("eval_dir") or str(
-            Path(paths_cfg.get("splits_dir", "outputs")).parent / "eval"
-        )
-
+    # output_dir stays None here so evaluate() derives it AFTER aligning
+    # the config with the checkpoint's training config (see
+    # align_config_to_checkpoint) — otherwise eval artifacts of a model
+    # trained with a different config would land in the wrong directory.
     evaluate(config, args.checkpoint, args.output_dir)
     return 0
 

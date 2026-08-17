@@ -1,6 +1,8 @@
 """Hand Left/Right Binary Classifier - Core Package (dual-head version)."""
 
-from hand_classifier.config import load_config, resolve_output_paths
+from hand_classifier.config import (
+    load_config, resolve_output_paths, align_config_to_checkpoint,
+)
 from hand_classifier.parser import (
     parse_cvat_xml, collect_all_samples, collect_negative_samples,
 )
@@ -18,6 +20,7 @@ from hand_classifier.infer import run_inference
 __all__ = [
     "load_config",
     "resolve_output_paths",
+    "align_config_to_checkpoint",
     "parse_cvat_xml",
     "collect_all_samples",
     "collect_negative_samples",

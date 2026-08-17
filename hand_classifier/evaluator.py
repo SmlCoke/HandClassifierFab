@@ -18,7 +18,7 @@ from sklearn.metrics import (
 
 from hand_classifier.dataset import HandROIDataset, get_transforms
 from hand_classifier.parser import collect_all_samples
-from hand_classifier.config import resolve_output_paths
+from hand_classifier.config import resolve_output_paths, align_config_to_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -159,16 +159,10 @@ def evaluate(config, checkpoint_path=None, output_dir=None):
 
     device = _get_device()
 
-    model_cfg = config["model"]
-    from models.factory import build_model
-    model = build_model(
-        architecture=model_cfg["architecture"],
-        pretrained=False,
-        num_handedness=model_cfg.get("num_handedness", 2),
-        num_presence=model_cfg.get("num_presence", 2),
-        version=model_cfg.get("version", "v1"),
-    )
-
+    # Locate and load the checkpoint first: its embedded training config
+    # decides which model to rebuild (see align_config_to_checkpoint),
+    # so evaluate/export always match the trained model even when the
+    # config file still names another architecture.
     if checkpoint_path is None:
         paths_cfg = config.get("paths", {})
         checkpoint_path = (
@@ -179,6 +173,17 @@ def evaluate(config, checkpoint_path=None, output_dir=None):
     checkpoint = torch.load(
         checkpoint_path, map_location=device, weights_only=False
     )
+    config, _ = align_config_to_checkpoint(config, checkpoint)
+
+    model_cfg = config["model"]
+    from models.factory import build_model
+    model = build_model(
+        architecture=model_cfg["architecture"],
+        pretrained=False,
+        num_handedness=model_cfg.get("num_handedness", 2),
+        num_presence=model_cfg.get("num_presence", 2),
+        version=model_cfg.get("version", "v1"),
+    )
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
     model.eval()
@@ -186,6 +191,12 @@ def evaluate(config, checkpoint_path=None, output_dir=None):
         "Loaded checkpoint from %s (epoch %d)",
         checkpoint_path, checkpoint.get("epoch", -1),
     )
+
+    if output_dir is None:
+        paths_cfg = config.get("paths", {})
+        output_dir = paths_cfg.get("eval_dir") or str(
+            Path(paths_cfg.get("splits_dir", "outputs")).parent / "eval"
+        )
 
     # Collect data
     data_cfg = config["data"]

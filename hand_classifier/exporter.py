@@ -5,7 +5,9 @@ from pathlib import Path
 
 import torch
 
-from hand_classifier.config import resolve_output_paths
+from hand_classifier.config import (
+    resolve_output_paths, align_config_to_checkpoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,22 @@ def export_onnx(config, checkpoint_path=None, output_path=None):
 
     device = torch.device("cpu")
 
+    # Locate and load the checkpoint first: its embedded training config
+    # decides which model to rebuild (see align_config_to_checkpoint),
+    # so export always matches the trained model even when the config
+    # file still names another architecture.
+    if checkpoint_path is None:
+        paths_cfg = config.get("paths", {})
+        checkpoint_path = (
+            Path(paths_cfg.get("checkpoint_dir", "outputs/checkpoints"))
+            / "best.pth"
+        )
+
+    checkpoint = torch.load(
+        checkpoint_path, map_location=device, weights_only=False
+    )
+    config, _ = align_config_to_checkpoint(config, checkpoint)
+
     model_cfg = config["model"]
     from models.factory import build_model
     model = build_model(
@@ -36,17 +54,6 @@ def export_onnx(config, checkpoint_path=None, output_path=None):
         num_presence=model_cfg.get("num_presence", 2),
         version=model_cfg.get("version", "v1"),
     )
-
-    paths_cfg = config.get("paths", {})
-    if checkpoint_path is None:
-        checkpoint_path = (
-            Path(paths_cfg.get("checkpoint_dir", "outputs/checkpoints"))
-            / "best.pth"
-        )
-
-    checkpoint = torch.load(
-        checkpoint_path, map_location=device, weights_only=False
-    )
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
     model.eval()
@@ -55,6 +62,7 @@ def export_onnx(config, checkpoint_path=None, output_path=None):
         checkpoint_path, checkpoint.get("epoch", -1),
     )
 
+    paths_cfg = config.get("paths", {})
     if output_path is None:
         # Prefer the per-model onnx path derived from paths.output_root,
         # fall back to the legacy <splits_dir>/../model.onnx location.

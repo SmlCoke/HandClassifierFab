@@ -4,7 +4,6 @@
 import argparse
 import logging
 import sys
-from pathlib import Path
 
 from hand_classifier import load_config, export_onnx, resolve_output_paths
 
@@ -39,13 +38,10 @@ def main():
     config = load_config(args.config)
     config = resolve_output_paths(config)
 
-    # Set default output path from config if not specified
-    if args.output is None:
-        paths_cfg = config.get("paths", {})
-        args.output = paths_cfg.get("onnx_path") or str(
-            Path(paths_cfg.get("splits_dir", "outputs")).parent / "model.onnx"
-        )
-
+    # output stays None here so export_onnx() derives it AFTER aligning
+    # the config with the checkpoint's training config (see
+    # align_config_to_checkpoint) — otherwise the ONNX of a model trained
+    # with a different config would land in the wrong directory.
     onnx_path = export_onnx(config, args.checkpoint, args.output)
     print(f"ONNX model exported to: {onnx_path}")
     return 0

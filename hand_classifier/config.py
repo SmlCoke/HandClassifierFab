@@ -1,8 +1,11 @@
 """Config loading utilities."""
 
+import logging
 import os
 from pathlib import Path
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 def load_config(config_path):
@@ -70,3 +73,48 @@ def resolve_output_paths(config):
     paths_cfg["onnx_path"] = str(base / "model.onnx")
     config["paths"] = paths_cfg
     return config
+
+
+def align_config_to_checkpoint(config, checkpoint):
+    """Align a config to the model actually stored in a checkpoint.
+
+    Training saves the full config inside the checkpoint. When evaluating
+    or exporting a checkpoint whose training config differs from the
+    current config file (e.g. ``evaluate.yaml`` / ``export_onnx.yaml``
+    still point at another model series/architecture), both the model
+    section and the output paths are adopted from the checkpoint, so the
+    correct architecture is always rebuilt and the artifacts land in that
+    model's own directory (never in the directory of a different model).
+    A warning is logged.
+
+    Args:
+        config: Current configuration dict.
+        checkpoint: Loaded checkpoint dict (may carry 'config').
+
+    Returns:
+        tuple (config, changed): config with the model and paths sections
+        aligned to the checkpoint; changed=True if any alignment happened.
+    """
+    ckpt_cfg = checkpoint.get("config") if isinstance(checkpoint, dict) else None
+    if not ckpt_cfg:
+        return config, False
+
+    ckpt_model = ckpt_cfg.get("model")
+    cur_model = config.get("model", {})
+    if not ckpt_model or ckpt_model == cur_model:
+        return config, False
+
+    config = dict(config)
+    config["model"] = dict(ckpt_model)
+    if ckpt_cfg.get("paths"):
+        # Follow the training-time output layout so evaluation / export
+        # artifacts land next to the checkpoint's own model directory.
+        config["paths"] = dict(ckpt_cfg["paths"])
+    logger.warning(
+        "Checkpoint was trained with model %s/%s but the current config "
+        "says %s/%s; using the checkpoint's model config and output "
+        "paths for this run.",
+        ckpt_model.get("version"), ckpt_model.get("architecture"),
+        cur_model.get("version"), cur_model.get("architecture"),
+    )
+    return config, True

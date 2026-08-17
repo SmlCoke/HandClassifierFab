@@ -29,8 +29,8 @@ data:
 # (resnet50/convnext_tiny/efficientnet_v2_s/vit_b16) use ImageNet
 # pretrained weights when pretrained: true
 model:
-  version: "v1"
-  architecture: "mobilenet_v3_small"
+  version: "v2"
+  architecture: "v2_vit_b16"
   num_handedness: 2
   num_presence: 2
   input_channels: 1
