@@ -48,8 +48,14 @@ training:
   class_weights: "balanced"
   amp: true
   num_workers: 4
+  # 多任务损失权重：总损失 = handedness_loss_weight * loss_handedness
+  #   + hand_presence.loss_weight * loss_hand_presence。
+  # handedness 权重略高于 hand presence（1.2 : 1.0），优先保证
+  # Hand Classifier 预测左右手的精度；如需进一步偏置可上调到 1.5。
+  handedness_loss_weight: 1.2
 
-# Hand presence multi-task weight
+# Hand presence multi-task weight（与 handedness_loss_weight 配合，
+# 总损失见 training.handedness_loss_weight 的注释）
 hand_presence:
   loss_weight: 1.0
 

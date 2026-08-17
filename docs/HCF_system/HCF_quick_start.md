@@ -49,6 +49,8 @@ python scripts/train.py --config configs/train.yaml
 
 批量采样比例：`configs/train.yaml` 的 `sampling` 节控制每个训练 batch 的组成（no_hand_ratio 为无手样本占比，left_right_ratio 为有手样本中左右手占比），防止庞大的负样本池主导 hand presence 训练；仅作用于训练，验证集按真实分布使用。
 
+多任务损失权重：总损失 = `training.handedness_loss_weight × loss_handedness + hand_presence.loss_weight × loss_hand_presence`，默认 1.2 : 1.0，handedness 略高，优先保证左右手精度；可调（如 1.5 进一步偏置）。
+
 ### 4. 评估
 
 ```bash

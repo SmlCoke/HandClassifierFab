@@ -142,6 +142,7 @@ python scripts/train.py --config configs/train.yaml
 - `training.head_lr_multiplier: 10`：新分类头未经过预训练，需要比 backbone 更快的收敛速度。
 - `training.warmup_epochs: 5`：预热有助于在差异化学习率配置下稳定早期训练。
 - `training.class_weights: "balanced"`：补偿各来源 Left:Right 类别不平衡。**当 `sampling` 节存在时**，类权重改为由目标采样比例推导（有手/无手按 `no_hand_ratio` 的逆频率，左右手按 `left_right_ratio` 的逆频率），避免与采样机制双重补偿。
+- `training.handedness_loss_weight: 1.2` 与 `hand_presence.loss_weight: 1.0`：多任务损失权重，总损失 = `1.2 × loss_handedness + 1.0 × loss_hand_presence`。handedness 权重略高，使模型优先保证左右手判断精度（hand presence 精度仍由类权重与采样比例保障）。权重可调：提高 handedness 权重（如 1.5）进一步偏置，降低则更均衡。早停/最佳检查点选择的 val_loss 同样采用该加权组合，因此最佳模型选择也偏向 handedness 精度。
 - `sampling.no_hand_ratio: 0.3`：每个 batch 中 no_hand 样本的目标占比。当前训练集原始比例约为 has_hand:no_hand = 46:54（负样本池更大），若不控制，多数 batch 会被负样本主导，presence 头将偏向把一切判为 no_hand；取 0.3 使每个 batch 保持 70:30 的有手/无手比例，负样本仍然充足但不再主导。比例可调：调大则 no_hand 召回优先，调小则 no_hand 误报优先。
 - `sampling.left_right_ratio: [0.5, 0.5]`：有手样本中 Left/Right 的目标占比，取 50:50 使 handedness 头在平衡分布上训练（配合 50:50 采样，handedness 类权重自动为均匀权重）。
 - `sampling` 机制只作用于**训练**；验证集按真实分布整体使用（不重采样），保证验证指标反映真实数据。

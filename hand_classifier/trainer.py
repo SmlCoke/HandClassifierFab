@@ -207,6 +207,11 @@ def train(config):
 
     h_loss_weight = train_cfg.get("handedness_loss_weight", 1.0)
     p_loss_weight = hp_cfg.get("loss_weight", 1.0)
+    logger.info(
+        "Multi-task loss weights: handedness=%.2f, hand_presence=%.2f "
+        "(total loss = %.2f*loss_h + %.2f*loss_p)",
+        h_loss_weight, p_loss_weight, h_loss_weight, p_loss_weight,
+    )
 
     # --- Optimizer ---
     lr = train_cfg.get("learning_rate", 1e-4)

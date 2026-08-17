@@ -225,6 +225,10 @@ sampling:
 
 启用后，训练集类权重改为由这些目标比例推导（而非原始数据计数），避免双重补偿。每个 epoch 为一轮完整的有手样本遍历，负样本每 epoch 随机取子集（等价于随机负样本挖掘）。
 
+### 多任务损失权重
+
+总损失 = `training.handedness_loss_weight × loss_handedness + hand_presence.loss_weight × loss_hand_presence`。默认 `handedness_loss_weight: 1.2`、`hand_presence.loss_weight: 1.0`，handedness（左右手）损失占比略高，优先保证 handedness 精度；早停/最佳检查点选择的 val_loss 同样采用该加权组合。权重可在 `configs/train.yaml` 中调整（例如提高到 1.5 进一步偏置 handedness）。
+
 ### 输出目录（`paths.output_root`）
 
 训练、评估、ONNX 导出产物按**模型系列 + 具体架构**分目录存放，不同模型互不覆盖：
