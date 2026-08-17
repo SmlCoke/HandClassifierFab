@@ -46,11 +46,11 @@ class Attention(nn.Module):
 class TransformerBlock(nn.Module):
     """Pre-LN transformer block: attention + MLP with residual connections."""
 
-    def __init__(self, dim, num_heads, mlp_ratio=4.0):
+    def __init__(self, dim, num_heads, mlp_ratio=4.0, norm_eps=1e-5):
         super().__init__()
-        self.norm1 = nn.LayerNorm(dim)
+        self.norm1 = nn.LayerNorm(dim, eps=norm_eps)
         self.attn = Attention(dim, num_heads)
-        self.norm2 = nn.LayerNorm(dim)
+        self.norm2 = nn.LayerNorm(dim, eps=norm_eps)
         hidden = int(dim * mlp_ratio)
         self.mlp = nn.Sequential(
             nn.Linear(dim, hidden),

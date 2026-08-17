@@ -109,9 +109,17 @@ def test_v2_batch_inference_contract():
     assert torch.allclose(pp.sum(dim=1), torch.ones(4), atol=1e-5)
 
 
-@pytest.mark.parametrize("name", ["v2_convnet_s", "v2_hybrid_s"])
+@pytest.mark.parametrize(
+    "name", ["v2_convnet_s", "v2_hybrid_s", "v2_vit_b16"]
+)
 def test_v2_onnx_export_contract(name, tmp_path):
-    """ONNX export must keep the same I/O names/shapes as v1.0."""
+    """ONNX export must keep the same I/O names/shapes as v1.0.
+
+    v2_vit_b16 is included because torchvision's native ViT encoder uses
+    scaled_dot_product_attention (opset 14+ only); our re-implementation
+    must export cleanly at opset 13.
+    """
+    import numpy as np
     import onnxruntime as ort
 
     model = build_model(name, pretrained=False)
@@ -135,3 +143,13 @@ def test_v2_onnx_export_contract(name, tmp_path):
     )
     assert out_h.shape == (1, 2)
     assert out_p.shape == (1, 2)
+
+    # Numerical consistency: ONNX outputs must match PyTorch outputs
+    with torch.no_grad():
+        torch_out = model(dummy)
+    np.testing.assert_allclose(
+        out_h, torch_out["handedness"].numpy(), rtol=1e-4, atol=1e-4
+    )
+    np.testing.assert_allclose(
+        out_p, torch_out["hand_presence"].numpy(), rtol=1e-4, atol=1e-4
+    )

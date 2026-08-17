@@ -149,31 +149,65 @@ def v2_efficientnet_v2_s(pretrained=True, num_handedness=2, num_presence=2):
 
 
 def v2_vit_b16(pretrained=True, num_handedness=2, num_presence=2):
-    """ViT-B/16 backbone with dual heads (1-channel input, 256x256 input)."""
+    """ViT-B/16 backbone with dual heads (1-channel input, 256x256 input).
+
+    torchvision's ViT encoder uses ``scaled_dot_product_attention`` which is
+    not exportable to ONNX opset 13, so the encoder is re-built with the
+    manual-attention blocks from ``models.v2.hybrid`` and the pretrained
+    weights (LayerNorm/attention/MLP) are copied over. The 224px position
+    embedding is interpolated to the 16x16 token grid of the 256px input.
+    """
+    from models.v2.hybrid import TransformerBlock
+
     model = _load_weights(vit_b_16, ViT_B_16_Weights, pretrained)
     in_features = model.heads.head.in_features
     embed_dim = in_features
+    num_heads = 12
+    depth = 12
+    mlp_ratio = 4.0  # torchvision ViT-B/16 mlp_dim = 768*4 = 3072
 
     conv_proj = _adapt_conv_1ch(model.conv_proj)  # 16x16 patches
 
-    # torchvision 0.16 keeps pos_embedding inside the encoder
-    # (1, 197, 768): interpolate to the 16x16 token grid of a 256px input
-    encoder = model.encoder
-    pos_embed_src = getattr(encoder, "pos_embedding",
+    # torchvision 0.16 keeps pos_embedding inside the encoder (1, 197, 768):
+    # interpolate to the 16x16 token grid of a 256px input -> (1, 257, 768)
+    pos_embed_src = getattr(model.encoder, "pos_embedding",
                             getattr(model, "pos_embedding", None))
     if pos_embed_src is None:
         raise AttributeError("ViT model has no position embedding attribute")
     pos_embed = _interpolate_vit_pos_embed(
         pos_embed_src.data, grid_h=16, grid_w=16
-    )  # (1, 257, 768)
-    encoder.pos_embedding = nn.Parameter(pos_embed)
+    )
+
+    blocks = nn.ModuleList([
+        TransformerBlock(embed_dim, num_heads, mlp_ratio, norm_eps=1e-6)
+        for _ in range(depth)
+    ])
+    norm = nn.LayerNorm(embed_dim, eps=1e-6)
+
+    if pretrained:
+        # Copy pretrained weights from the torchvision ViT encoder
+        tv_blocks = model.encoder.layers
+        for mine, tv in zip(blocks, tv_blocks):
+            mine.norm1.load_state_dict(tv.ln_1.state_dict())
+            mine.norm2.load_state_dict(tv.ln_2.state_dict())
+            mine.mlp[0].load_state_dict(tv.mlp[0].state_dict())
+            mine.mlp[2].load_state_dict(tv.mlp[3].state_dict())
+            mha = tv.self_attention
+            with torch.no_grad():
+                mine.attn.qkv.weight.copy_(mha.in_proj_weight)
+                mine.attn.qkv.bias.copy_(mha.in_proj_bias)
+                mine.attn.proj.weight.copy_(mha.out_proj.weight)
+                mine.attn.proj.bias.copy_(mha.out_proj.bias)
+        norm.load_state_dict(model.encoder.ln.state_dict())
 
     class ViTDualHead(nn.Module):
         def __init__(self):
             super().__init__()
             self.conv_proj = conv_proj
             self.class_token = model.class_token
-            self.encoder = encoder
+            self.pos_embed = nn.Parameter(pos_embed)
+            self.blocks = blocks
+            self.norm = norm
             self.heads = DualHead(embed_dim, num_handedness,
                                   num_presence, dropout=0.1)
 
@@ -182,7 +216,10 @@ def v2_vit_b16(pretrained=True, num_handedness=2, num_presence=2):
             x = x.flatten(2).transpose(1, 2)            # (B, 256, D)
             cls = self.class_token.expand(x.shape[0], -1, -1)
             x = torch.cat([cls, x], dim=1)              # (B, 257, D)
-            x = self.encoder(x)                         # adds pos_embedding
+            x = x + self.pos_embed
+            for block in self.blocks:
+                x = block(x)
+            x = self.norm(x)
             x = x[:, 0]                                 # class token
             return self.heads(x)
 
