@@ -12,7 +12,9 @@ import logging
 import sys
 from pathlib import Path
 
-from hand_classifier import load_config, relabel_cvat_xml, compute_agreement
+from hand_classifier import (
+    load_config, resolve_output_paths, relabel_cvat_xml, compute_agreement,
+)
 
 
 def main():
@@ -56,15 +58,19 @@ def main():
     )
 
     config = load_config(args.config)
+    config = resolve_output_paths(config)
 
     # --- Determine model path ---
     if args.checkpoint:
         model_path = Path(args.checkpoint)
     else:
         paths_cfg = config.get("paths", {})
-        model_path = (
-            Path(paths_cfg.get("splits_dir", "outputs")).parent / "model.onnx"
-        )
+        model_path = paths_cfg.get("onnx_path")
+        if model_path is None:
+            model_path = (
+                Path(paths_cfg.get("splits_dir", "outputs")).parent / "model.onnx"
+            )
+        model_path = Path(model_path)
     model_path = str(model_path)
 
     # --- Determine input XML path ---

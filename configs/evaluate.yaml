@@ -24,8 +24,7 @@ training:
   num_workers: 4
   amp: false
 
-# Output paths
+# Output paths. output_root organizes artifacts per model
+# (<output_root>/<version>/<architecture>/); see train.yaml.
 paths:
-  checkpoint_dir: "../autodl-tmp/TrainFab/outputs/checkpoints"
-  metrics_dir: "../autodl-tmp/TrainFab/outputs/train"
-  splits_dir: "../autodl-tmp/TrainFab/outputs"
+  output_root: "../autodl-tmp/TrainFab/outputs"

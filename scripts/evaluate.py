@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from hand_classifier import load_config, evaluate
+from hand_classifier import load_config, evaluate, resolve_output_paths
 
 
 def main():
@@ -21,7 +21,8 @@ def main():
     )
     parser.add_argument(
         "--output-dir", default=None,
-        help="Directory for evaluation outputs (default: from config paths.splits_dir/../eval)",
+        help="Directory for evaluation outputs "
+             "(default: paths.eval_dir, or <splits_dir>/../eval)",
     )
     parser.add_argument(
         "--log-level", default="INFO",
@@ -36,12 +37,14 @@ def main():
     )
 
     config = load_config(args.config)
-    
+    config = resolve_output_paths(config)
+
     if args.output_dir is None:
         paths_cfg = config.get("paths", {})
-        parent_dir = Path(paths_cfg.get("splits_dir", "outputs")).parent
-        args.output_dir = str(parent_dir / "eval")
-    
+        args.output_dir = paths_cfg.get("eval_dir") or str(
+            Path(paths_cfg.get("splits_dir", "outputs")).parent / "eval"
+        )
+
     evaluate(config, args.checkpoint, args.output_dir)
     return 0
 

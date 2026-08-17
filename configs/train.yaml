@@ -76,8 +76,10 @@ augmentation:
   contrast: 0.2
   random_erasing_prob: 0.3
 
-# Output paths
+# Output paths. When output_root is set, all training/evaluation/export
+# artifacts are organized as <output_root>/<model.version>/<model.architecture>/,
+# so different model series/architectures never overwrite each other:
+#   checkpoints/best.pth, last.pth | train/metrics.jsonl | eval/val_metrics.json
+#   | splits.json | model.onnx
 paths:
-  checkpoint_dir: "../autodl-tmp/TrainFab/outputs/checkpoints"
-  metrics_dir: "../autodl-tmp/TrainFab/outputs/train"
-  splits_dir: "../autodl-tmp/TrainFab/outputs"
+  output_root: "../autodl-tmp/TrainFab/outputs"

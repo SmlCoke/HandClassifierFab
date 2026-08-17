@@ -20,6 +20,7 @@ from hand_classifier.dataset import (
 )
 from hand_classifier.parser import collect_all_samples
 from hand_classifier.dataset import split_dataset, save_split_info
+from hand_classifier.config import resolve_output_paths
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,10 @@ def train(config):
     Returns:
         str: Path to the best checkpoint.
     """
+    # Organize outputs as <output_root>/<version>/<architecture>/ when
+    # paths.output_root is configured (no cross-model overwrites).
+    config = resolve_output_paths(config)
+
     # --- Collect and split data ---
     logger.info("=== Collecting samples ===")
     data_cfg = config["data"]

@@ -18,6 +18,7 @@ from sklearn.metrics import (
 
 from hand_classifier.dataset import HandROIDataset, get_transforms
 from hand_classifier.parser import collect_all_samples
+from hand_classifier.config import resolve_output_paths
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,10 @@ def evaluate(config, checkpoint_path=None, output_dir=None):
     Returns:
         dict: Evaluation results.
     """
+    # Organize outputs as <output_root>/<version>/<architecture>/ when
+    # paths.output_root is configured (no cross-model overwrites).
+    config = resolve_output_paths(config)
+
     device = _get_device()
 
     model_cfg = config["model"]

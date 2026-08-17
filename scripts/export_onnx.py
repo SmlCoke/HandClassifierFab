@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from hand_classifier import load_config, export_onnx
+from hand_classifier import load_config, export_onnx, resolve_output_paths
 
 
 def main():
@@ -21,7 +21,8 @@ def main():
     )
     parser.add_argument(
         "--output", "-o", default=None,
-        help="Output ONNX file path (default: from config paths.splits_dir/../model.onnx)",
+        help="Output ONNX file path (default: paths.onnx_path, "
+             "or <splits_dir>/../model.onnx)",
     )
     parser.add_argument(
         "--log-level", default="INFO",
@@ -36,13 +37,15 @@ def main():
     )
 
     config = load_config(args.config)
-    
+    config = resolve_output_paths(config)
+
     # Set default output path from config if not specified
     if args.output is None:
         paths_cfg = config.get("paths", {})
-        output_dir = Path(paths_cfg.get("splits_dir", "outputs")).parent
-        args.output = str(output_dir / "model.onnx")
-    
+        args.output = paths_cfg.get("onnx_path") or str(
+            Path(paths_cfg.get("splits_dir", "outputs")).parent / "model.onnx"
+        )
+
     onnx_path = export_onnx(config, args.checkpoint, args.output)
     print(f"ONNX model exported to: {onnx_path}")
     return 0

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import torch
 
+from hand_classifier.config import resolve_output_paths
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,6 +21,10 @@ def export_onnx(config, checkpoint_path=None, output_path=None):
     Returns:
         str: Path to the exported ONNX model.
     """
+    # Organize outputs as <output_root>/<version>/<architecture>/ when
+    # paths.output_root is configured (no cross-model overwrites).
+    config = resolve_output_paths(config)
+
     device = torch.device("cpu")
 
     model_cfg = config["model"]
@@ -50,8 +56,12 @@ def export_onnx(config, checkpoint_path=None, output_path=None):
     )
 
     if output_path is None:
-        output_dir = Path(paths_cfg.get("splits_dir", "outputs")).parent
-        output_path = str(output_dir / "model.onnx")
+        # Prefer the per-model onnx path derived from paths.output_root,
+        # fall back to the legacy <splits_dir>/../model.onnx location.
+        output_path = paths_cfg.get("onnx_path")
+        if output_path is None:
+            output_dir = Path(paths_cfg.get("splits_dir", "outputs")).parent
+            output_path = str(output_dir / "model.onnx")
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     export_cfg = config.get("export", {})

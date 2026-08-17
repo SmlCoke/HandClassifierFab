@@ -74,11 +74,8 @@ HandClassifierFab/
 │   ├── test_preprocessing.py    # 预处理 / 归一化测试
 │   ├── test_cvat_label_export.py # CVAT XML 标签替换测试
 │   └── test_onnx_export.py      # ONNX 导出验证测试
-├── outputs/                     # 运行时生成（gitignore）
-│   ├── checkpoints/             # 模型检查点
-│   ├── train/                   # 训练指标
-│   ├── eval/                    # 评估结果
-│   └── splits.json              # 数据集划分信息
+├── outputs/                     # 运行时生成（gitignore；服务器端实际输出见 paths.output_root）
+│   └── <version>/<architecture>/  # 按模型系列/架构分目录（见"输出目录"一节）
 ├── .gitignore
 ├── CLAUDE.md                    # 仓库级 Agent 行为规范
 ├── Makefile                     # make 快捷命令
@@ -227,6 +224,21 @@ sampling:
 ```
 
 启用后，训练集类权重改为由这些目标比例推导（而非原始数据计数），避免双重补偿。每个 epoch 为一轮完整的有手样本遍历，负样本每 epoch 随机取子集（等价于随机负样本挖掘）。
+
+### 输出目录（`paths.output_root`）
+
+训练、评估、ONNX 导出产物按**模型系列 + 具体架构**分目录存放，不同模型互不覆盖：
+
+```
+<paths.output_root>/<model.version>/<model.architecture>/
+├── checkpoints/best.pth, last.pth   # 训练检查点
+├── train/metrics.jsonl              # 训练指标
+├── eval/val_metrics.json            # 评估指标
+├── splits.json                      # 数据集划分信息
+└── model.onnx                       # 导出的 ONNX 模型
+```
+
+例如默认配置（v1 / mobilenet_v3_small）产出在 `../autodl-tmp/TrainFab/outputs/v1/mobilenet_v3_small/`。所有入口脚本（train / evaluate / export_onnx / cvat_label_test）都会根据 `paths.output_root` + `model.version` + `model.architecture` 自动定位输入检查点和输出目录，无需手工传路径；未配置 `output_root` 时保持旧的显式路径行为（向后兼容）。评估/导出配置中的 version/architecture 必须与训练时一致。
 
 ## 数据来源格式
 

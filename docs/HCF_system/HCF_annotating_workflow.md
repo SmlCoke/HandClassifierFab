@@ -126,14 +126,17 @@ python scripts/train.py --config configs/train.yaml
 
 ### 输出
 
-- `outputs/splits.json` - 训练集和验证集的划分元数据。
-- `outputs/checkpoints/best.pth` - 最佳模型检查点（按 val_loss 最低）。
-- `outputs/checkpoints/last.pth` - 最新模型检查点。
-- `outputs/train/metrics.jsonl` - 每个 epoch 的训练指标。
+产物按模型系列/架构分目录存放（下文 `<model_dir>` 表示 `paths.output_root/<model.version>/<model.architecture>/`，未配置 `output_root` 时退化为旧结构 `outputs/`）：
+
+- `<model_dir>/splits.json` - 训练集和验证集的划分元数据。
+- `<model_dir>/checkpoints/best.pth` - 最佳模型检查点（按 val_loss 最低）。
+- `<model_dir>/checkpoints/last.pth` - 最新模型检查点。
+- `<model_dir>/train/metrics.jsonl` - 每个 epoch 的训练指标。
 
 ### 参数调整原理
 
-- `model.version` / `model.architecture`：选择训练哪个系列的哪个模型；v2.0 系列参数远大于 v1.0，精度优先、延迟不敏感。
+- `model.version` / `model.architecture`：选择训练哪个系列的哪个模型；v2.0 系列参数远大于 v1.0，精度优先、延迟不敏感。两者同时决定产物目录（见 `paths.output_root`），因此**不同模型互不覆盖**，同一模型重复训练仍会覆盖自身旧结果。
+- `paths.output_root`：产物根目录（默认 `../autodl-tmp/TrainFab/outputs`）。train/evaluate/export_onnx/cvat_label_test 四个入口都会据此自动定位输入与输出路径（`checkpoint_dir`、`metrics_dir`、`splits_dir`、`eval_dir`、`onnx_path`），无需手工传参；缺省该键时使用配置中的显式旧式路径，向后兼容。
 - `training.batch_size: 64`：对于 256×256 单通道图像，RTX 3090 24GB 显存可轻松容纳（v2 大模型建议保持 64，必要时降低到 32）。
 - `training.learning_rate: 0.0001`：微调预训练模型的标准学习率；v2.0 自定义系列（从零训练）建议提高到 `0.0003`~`0.001`。
 - `training.head_lr_multiplier: 10`：新分类头未经过预训练，需要比 backbone 更快的收敛速度。
@@ -152,12 +155,12 @@ python scripts/train.py --config configs/train.yaml
 ### 命令
 
 ```bash
-python scripts/evaluate.py --config configs/evaluate.yaml [--checkpoint outputs/checkpoints/best.pth]
+python scripts/evaluate.py --config configs/evaluate.yaml [--checkpoint <model_dir>/checkpoints/best.pth]
 ```
 
 ### 输入
 
-- 训练好的模型检查点（`model.version` / `model.architecture` 必须与训练时一致）。
+- 训练好的模型检查点（`model.version` / `model.architecture` 必须与训练时一致，默认自动定位到 `<model_dir>/checkpoints/best.pth`）。
 - 验证集（由划分产生或来自 `data.val_sources`）。
 
 ### 操作
@@ -170,8 +173,8 @@ python scripts/evaluate.py --config configs/evaluate.yaml [--checkpoint outputs/
 ### 输出
 
 - 终端输出：所有评估指标。
-- `outputs/eval/val_metrics.json` - 完整评估指标 JSON 文件。
-- 若指定了测试来源，还会输出 `outputs/eval/test_metrics.json`。
+- `<model_dir>/eval/val_metrics.json` - 完整评估指标 JSON 文件（`--output-dir` 可覆盖）。
+- 若指定了测试来源，还会输出 `<model_dir>/eval/test_metrics.json`。
 
 ---
 
@@ -180,7 +183,7 @@ python scripts/evaluate.py --config configs/evaluate.yaml [--checkpoint outputs/
 ### 命令
 
 ```bash
-python scripts/export_onnx.py --config configs/export_onnx.yaml [--checkpoint outputs/checkpoints/best.pth] [-o outputs/model.onnx]
+python scripts/export_onnx.py --config configs/export_onnx.yaml [--checkpoint <model_dir>/checkpoints/best.pth] [-o <model_dir>/model.onnx]
 ```
 
 ### 输入
@@ -196,7 +199,7 @@ python scripts/export_onnx.py --config configs/export_onnx.yaml [--checkpoint ou
 
 ### 输出
 
-- `outputs/model.onnx` - 支持动态 batch 的 ONNX 模型文件。
+- `<model_dir>/model.onnx` - 支持动态 batch 的 ONNX 模型文件（默认输出路径，`-o` 可覆盖）。
 
 ### 原理
 
@@ -212,7 +215,7 @@ python scripts/export_onnx.py --config configs/export_onnx.yaml [--checkpoint ou
 ### 命令
 
 ```bash
-python scripts/cvat_label_test.py --config configs/cvat_label_test.yaml [--checkpoint outputs/model.onnx] [--xml <path>]
+python scripts/cvat_label_test.py --config configs/cvat_label_test.yaml [--checkpoint <model_dir>/model.onnx] [--xml <path>]
 ```
 
 ### 输入

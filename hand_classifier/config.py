@@ -1,6 +1,7 @@
 """Config loading utilities."""
 
 import os
+from pathlib import Path
 import yaml
 
 
@@ -24,3 +25,48 @@ def resolve_path(path, base_dir=None):
     if base_dir and not os.path.isabs(path):
         path = os.path.join(base_dir, path)
     return os.path.normpath(path)
+
+
+def resolve_output_paths(config):
+    """Derive per-model output paths under ``paths.output_root``.
+
+    When ``paths.output_root`` is configured, all training / evaluation /
+    export artifacts are organized by model series and architecture so
+    different models never overwrite each other::
+
+        <output_root>/<model.version>/<model.architecture>/
+            checkpoints/best.pth, last.pth
+            train/metrics.jsonl
+            eval/val_metrics.json
+            splits.json
+            model.onnx
+
+    The derived keys are written back into ``config["paths"]`` as
+    ``checkpoint_dir``, ``metrics_dir``, ``splits_dir``, ``eval_dir`` and
+    ``onnx_path``. If ``output_root`` is absent, the explicitly configured
+    legacy paths are kept unchanged (backward compatible).
+
+    Args:
+        config: Configuration dict.
+
+    Returns:
+        dict: A new config dict with resolved ``paths``.
+    """
+    config = dict(config)
+    paths_cfg = dict(config.get("paths", {}))
+    output_root = paths_cfg.get("output_root")
+    if not output_root:
+        return config
+
+    model_cfg = config.get("model", {})
+    version = str(model_cfg.get("version", "v1"))
+    architecture = str(model_cfg.get("architecture", "unknown"))
+    base = Path(resolve_path(str(output_root))) / version / architecture
+
+    paths_cfg["checkpoint_dir"] = str(base / "checkpoints")
+    paths_cfg["metrics_dir"] = str(base / "train")
+    paths_cfg["splits_dir"] = str(base)
+    paths_cfg["eval_dir"] = str(base / "eval")
+    paths_cfg["onnx_path"] = str(base / "model.onnx")
+    config["paths"] = paths_cfg
+    return config

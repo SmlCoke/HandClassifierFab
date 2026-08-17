@@ -6,7 +6,9 @@ EVAL_CONFIG        ?= configs/evaluate.yaml
 EXPORT_CONFIG      ?= configs/export_onnx.yaml
 CVAT_CONFIG        ?= configs/cvat_label_test.yaml
 INFER_CONFIG       ?= configs/infer.yaml
-CHECKPOINT         ?= outputs/checkpoints/best.pth
+# Optional checkpoint override. When empty, each script derives the path
+# from its config (paths.output_root/<version>/<architecture>/...).
+CHECKPOINT         ?=
 
 setup:
 	pip install -r requirements.txt
@@ -21,13 +23,13 @@ train:
 	python scripts/train.py --config $(TRAIN_CONFIG)
 
 evaluate:
-	python scripts/evaluate.py --config $(EVAL_CONFIG) --checkpoint $(CHECKPOINT)
+	python scripts/evaluate.py --config $(EVAL_CONFIG) $(if $(strip $(CHECKPOINT)),--checkpoint $(CHECKPOINT))
 
 export-onnx:
-	python scripts/export_onnx.py --config $(EXPORT_CONFIG) --checkpoint $(CHECKPOINT)
+	python scripts/export_onnx.py --config $(EXPORT_CONFIG) $(if $(strip $(CHECKPOINT)),--checkpoint $(CHECKPOINT))
 
 cvat-label-test:
-	python scripts/cvat_label_test.py --config $(CVAT_CONFIG) --checkpoint $(CHECKPOINT)
+	python scripts/cvat_label_test.py --config $(CVAT_CONFIG)
 
 infer:
 	python scripts/infer.py --config $(INFER_CONFIG)
