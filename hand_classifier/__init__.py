@@ -7,6 +7,7 @@ from hand_classifier.parser import (
 from hand_classifier.dataset import (
     HandROIDataset, get_transforms, split_dataset,
     save_split_info, compute_class_weights,
+    StratifiedBatchSampler, compute_target_weights,
 )
 from hand_classifier.trainer import train
 from hand_classifier.evaluator import evaluate
@@ -24,6 +25,8 @@ __all__ = [
     "split_dataset",
     "save_split_info",
     "compute_class_weights",
+    "StratifiedBatchSampler",
+    "compute_target_weights",
     "train",
     "evaluate",
     "export_onnx",

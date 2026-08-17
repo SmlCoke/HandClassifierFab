@@ -75,3 +75,36 @@ def test_collect_all_samples_autolabel(test_dir):
     for s in samples:
         assert s["presence_label"] == 1
         assert s["handedness_label"] == -1
+
+
+def test_collect_all_samples_flat_negative_layout(tmp_path):
+    """Flat image-only layout (PNG files directly in the source dir) must be
+    collected as negative samples."""
+    source = tmp_path / "flat-negative-source"
+    source.mkdir()
+    for name in ["a.png", "b.png", "c.png"]:
+        (source / name).touch()
+    # decoy non-image file and nested junk must be ignored
+    (source / "notes.txt").write_text("junk")
+    (source / ".ipynb_checkpoints").mkdir()
+
+    samples = collect_all_samples([str(source)])
+    assert len(samples) == 3
+    for s in samples:
+        assert s["presence_label"] == 0
+        assert s["handedness_label"] == -1
+        assert s["source"] == "flat-negative-source"
+        assert os.path.basename(s["image_path"]) in ("a.png", "b.png", "c.png")
+
+
+def test_collect_all_samples_canonical_negative_layout(tmp_path):
+    """Canonical image-only layout (<source>/images/*.png) still works."""
+    source = tmp_path / "canonical-negative-source"
+    images = source / "images"
+    images.mkdir(parents=True)
+    for name in ["a.png", "b.png"]:
+        (images / name).touch()
+
+    samples = collect_all_samples([str(source)])
+    assert len(samples) == 2
+    assert all(s["presence_label"] == 0 for s in samples)

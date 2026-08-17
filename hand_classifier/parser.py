@@ -98,22 +98,31 @@ def parse_cvat_xml(xml_path, images_dir):
 def collect_negative_samples(source_dir):
     """Collect negative (no_hand) samples from an image-only directory.
 
-    The directory should contain PNG images directly (no XML required).
     Every image is treated as presence_label=0, handedness_label=-1.
 
+    Supported layouts:
+      - ``<source_dir>/images/*.png`` (canonical)
+      - ``<source_dir>/*.png`` (flat layout; accepted for robustness,
+        e.g. before a dataset directory has been normalized)
+
     Args:
-        source_dir: Path containing images/ subdirectory with .png files.
+        source_dir: Path containing PNG images.
 
     Returns:
         list of dict with 'image_path', 'handedness_label', 'presence_label'.
     """
     source_dir = Path(source_dir)
     img_dir = source_dir / "images"
-    if not img_dir.is_dir():
-        logger.warning("No images/ in %s, skipping", source_dir)
+    if img_dir.is_dir():
+        pngs = sorted(img_dir.glob("*.png"))
+        layout = "images/"
+    else:
+        pngs = sorted(source_dir.glob("*.png"))
+        layout = "flat"
+    if not pngs:
+        logger.warning("No PNG images found in %s, skipping", source_dir)
         return []
 
-    pngs = sorted(img_dir.glob("*.png"))
     samples = []
     for p in pngs:
         samples.append({
@@ -121,7 +130,8 @@ def collect_negative_samples(source_dir):
             "handedness_label": -1,
             "presence_label": 0,
         })
-    logger.info("  %s: %d negative samples", source_dir.name, len(samples))
+    logger.info("  %s: %d negative samples (%s layout)",
+                source_dir.name, len(samples), layout)
     return samples
 
 
@@ -157,6 +167,7 @@ def collect_all_samples(source_dirs, negative_dirs=None):
             # Check if this is an image-only directory (no XML)
             has_xml = any(source_dir.glob("cvat_*.xml"))
             images_dir = source_dir / "images"
+            has_images = images_dir.is_dir() or any(source_dir.glob("*.png"))
 
             if has_xml and images_dir.is_dir():
                 # Find XML
@@ -178,8 +189,9 @@ def collect_all_samples(source_dirs, negative_dirs=None):
                 all_samples.extend(samples)
                 logger.info("  %s: %d samples", source_name, len(samples))
 
-            elif images_dir.is_dir():
-                # Image-only directory: treat as negative
+            elif has_images:
+                # Image-only directory: treat as negative (supports both
+                # the canonical images/ layout and the flat layout)
                 samples = collect_negative_samples(source_dir)
                 source_name = source_dir.name
                 for s in samples:

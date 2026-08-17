@@ -57,17 +57,29 @@ def verify_source_dir(source_dir):
 
     images_dir = source_dir / "images"
     xml_path = _xml_candidates(source_dir)
+    has_flat_pngs = any(source_dir.glob("*.png"))
 
-    if not images_dir.is_dir() and xml_path is None:
+    if not images_dir.is_dir() and not has_flat_pngs and xml_path is None:
         report["status"] = "skipped"
         return report
 
-    if not images_dir.is_dir():
+    if images_dir.is_dir():
+        pngs = sorted(images_dir.glob("*.png"))
+        layout = "images/"
+    elif has_flat_pngs:
+        # Flat layout: PNG files directly in the source directory
+        pngs = sorted(source_dir.glob("*.png"))
+        layout = "flat"
+        report["warnings"].append(
+            "flat layout (PNG files directly in source dir, no images/ "
+            "subdirectory); consider normalizing to <source>/images/"
+        )
+    else:
         report["errors"].append("images/ directory missing")
         report["status"] = "error"
         return report
 
-    pngs = sorted(images_dir.glob("*.png"))
+    report["layout"] = layout
     report["n_images"] = len(pngs)
     report["xml"] = xml_path.name if xml_path else None
 

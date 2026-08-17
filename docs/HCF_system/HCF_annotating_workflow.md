@@ -42,7 +42,7 @@ make dataset-verify
 ### 输入
 
 - `configs/train.yaml` 中 `data.train_sources` / `data.val_sources` 指定的数据来源目录（位于服务器端）。
-- 每个数据来源目录包含 `images/*.png` 和一个 CVAT XML 标注文件（或仅有 `images/*.png` 的纯负样本目录）。
+- 每个数据来源目录包含 `images/*.png` 和一个 CVAT XML 标注文件（或仅有 `images/*.png` 的纯负样本目录；负样本目录的标准形式为 `<来源>/images/*.png`，parser 也兼容 PNG 直接平铺在来源目录根部的旧布局）。
 
 ### 操作
 
@@ -117,6 +117,7 @@ python scripts/train.py --config configs/train.yaml
    - v2.0 迁移系列：ImageNet 预训练主干（ResNet50/ConvNeXt/EfficientNetV2/ViT），首层卷积 RGB 权值平均为单通道，位置编码（ViT）插值到 256px 输入。
 4. **训练循环**：
    - 损失函数：`CrossEntropyLoss`，使用平衡类别权重（逆频率）。
+   - **批量采样比例控制**（config `sampling`）：当配置存在 `sampling` 节时，训练 DataLoader 使用 `StratifiedBatchSampler`，每个 batch 严格按目标比例组成：`round(batch_size * no_hand_ratio)` 个 no_hand 样本 + 其余 has_hand 样本按 `left_right_ratio` 拆分为 Left/Right（handedness 未知的有手样本作为兜底）。负样本池远大于正样本池，此机制保证 no_hand 不会淹没每个 batch，hand presence 分类头不会因训练数据失衡而偏向某一类。
    - 优化器：`AdamW`，采用差异化学习率（backbone 使用基础 lr，分类头使用 lr×10）。
    - 学习率调度：`CosineAnnealingLR` + 线性预热（5 个 epoch）。
    - 启用自动混合精度（AMP，仅 GPU）。
@@ -137,7 +138,10 @@ python scripts/train.py --config configs/train.yaml
 - `training.learning_rate: 0.0001`：微调预训练模型的标准学习率；v2.0 自定义系列（从零训练）建议提高到 `0.0003`~`0.001`。
 - `training.head_lr_multiplier: 10`：新分类头未经过预训练，需要比 backbone 更快的收敛速度。
 - `training.warmup_epochs: 5`：预热有助于在差异化学习率配置下稳定早期训练。
-- `training.class_weights: "balanced"`：补偿各来源 Left:Right 类别不平衡。
+- `training.class_weights: "balanced"`：补偿各来源 Left:Right 类别不平衡。**当 `sampling` 节存在时**，类权重改为由目标采样比例推导（有手/无手按 `no_hand_ratio` 的逆频率，左右手按 `left_right_ratio` 的逆频率），避免与采样机制双重补偿。
+- `sampling.no_hand_ratio: 0.3`：每个 batch 中 no_hand 样本的目标占比。当前训练集原始比例约为 has_hand:no_hand = 46:54（负样本池更大），若不控制，多数 batch 会被负样本主导，presence 头将偏向把一切判为 no_hand；取 0.3 使每个 batch 保持 70:30 的有手/无手比例，负样本仍然充足但不再主导。比例可调：调大则 no_hand 召回优先，调小则 no_hand 误报优先。
+- `sampling.left_right_ratio: [0.5, 0.5]`：有手样本中 Left/Right 的目标占比，取 50:50 使 handedness 头在平衡分布上训练（配合 50:50 采样，handedness 类权重自动为均匀权重）。
+- `sampling` 机制只作用于**训练**；验证集按真实分布整体使用（不重采样），保证验证指标反映真实数据。
 - `augmentation.horizontal_flip_prob: 0.5`：水平翻转后必须同步交换 0↔1 标签，保证标签正确性。
 - `augmentation.rotation_degrees: 10`：小角度旋转可模拟手部姿态的自然变化。
 

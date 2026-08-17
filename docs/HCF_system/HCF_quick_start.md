@@ -42,10 +42,12 @@ python scripts/dataset_stats.py --config configs/train.yaml
 python scripts/train.py --config configs/train.yaml
 ```
 
-输入：HCFTrainSource 全部来源（含 10 个新增 eos_2.1 rain/thick 来源 + NegativeTrain），约 15000 张；HCFEvalSource 验证集（含 2 个新增 eos_2.1 验证来源），通过 glob 自动发现
+输入：HCFTrainSource 全部来源（含 eos_2.1 rain/thick 来源 + NegativeTrain 最新负样本池），约 29500 张；HCFEvalSource 验证集（含 NegativeVal 负样本验证来源），通过 glob 自动发现
 输出：`outputs/checkpoints/best.pth`、`outputs/splits.json`、`outputs/train/metrics.jsonl`
 
 模型版本选择：修改 `configs/train.yaml` 中 `model.version`（`v1`/`v2`）与 `model.architecture`，例如 `version: "v2"` + `architecture: "v2_convnet_l"`。评估与导出配置中的版本/架构必须与训练一致。
+
+批量采样比例：`configs/train.yaml` 的 `sampling` 节控制每个训练 batch 的组成（no_hand_ratio 为无手样本占比，left_right_ratio 为有手样本中左右手占比），防止庞大的负样本池主导 hand presence 训练；仅作用于训练，验证集按真实分布使用。
 
 ### 4. 评估
 

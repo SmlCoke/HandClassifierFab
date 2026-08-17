@@ -209,11 +209,24 @@ make clean           # 清理 outputs/、__pycache__/、.pytest_cache/
 
 | 文件 | 用途 |
 |------|------|
-| `train.yaml` | 数据来源、模型版本与架构、训练超参数、数据增强 |
+| `train.yaml` | 数据来源、模型版本与架构、训练超参数、批量采样比例、数据增强 |
 | `evaluate.yaml` | 评估数据来源、模型版本与架构 |
 | `export_onnx.yaml` | ONNX 导出参数、模型版本与架构 |
 | `cvat_label_test.yaml` | CVAT 标签导出测试配置 |
 | `infer.yaml` | 推理配置（ONNX 模型、输入/输出目录、阈值） |
+
+### 批量采样比例（`sampling`）
+
+当前负样本（no_hand）池远大于正样本（has_hand）池，若不做控制，每个 batch 会被负样本主导，导致 hand presence 分类头偏向某一类。`configs/train.yaml` 的 `sampling` 节启用按 batch 精确配比的采样（仅作用于训练，验证集按真实分布整体使用）：
+
+```yaml
+sampling:
+  enabled: true
+  no_hand_ratio: 0.3            # 每个 batch 中 no_hand 样本的目标占比（0~1）
+  left_right_ratio: [0.5, 0.5]  # 有手样本中 Left / Right 的目标占比（和为 1）
+```
+
+启用后，训练集类权重改为由这些目标比例推导（而非原始数据计数），避免双重补偿。每个 epoch 为一轮完整的有手样本遍历，负样本每 epoch 随机取子集（等价于随机负样本挖掘）。
 
 ## 数据来源格式
 
@@ -236,6 +249,8 @@ make clean           # 清理 outputs/、__pycache__/、.pytest_cache/
 ```
 └── images/*.png
 ```
+
+负样本目录的标准形式为 `<来源>/images/*.png`；parser 也兼容 PNG 直接平铺在来源目录根部的旧布局（`verify_datasets` 会给出告警提示规范化）。
 
 ## 服务器环境
 

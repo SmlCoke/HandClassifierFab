@@ -224,3 +224,140 @@ def compute_class_weights(train_samples, num_classes=2, task="handedness"):
     weights = 1.0 / class_counts
     weights = weights / weights.sum() * num_classes
     return torch.tensor(weights, dtype=torch.float32)
+
+
+class StratifiedBatchSampler:
+    """Per-batch class-ratio sampler for training.
+
+    The no_hand pool of the current dataset is much larger than the
+    has_hand pool, so plain random sampling would make most batches
+    dominated by no_hand samples and skew the hand presence head.
+    This sampler enforces a fixed target composition for **every** batch:
+
+      - ``round(batch_size * no_hand_ratio)`` no_hand samples
+      - the remaining ``batch_size - n_no_hand`` has_hand samples,
+        split between Left / Right according to ``left_right_ratio``
+        (has_hand samples with unknown handedness are used as fallback)
+
+    Each pool is shuffled at the start of every epoch; if a pool is
+    exhausted before the epoch ends, it is reshuffled and reused so the
+    per-batch composition stays exact. Only full batches are emitted
+    (equivalent to ``drop_last=True``). Epoch length is one pass over
+    the has_hand pool (``len(has_hand) // n_has_hand_per_batch``).
+
+    Args:
+        samples: List of sample dicts (same format as HandROIDataset).
+        batch_size: Batch size.
+        no_hand_ratio: Target fraction of no_hand samples per batch (0~1).
+        left_right_ratio: Target Left/Right split within the has_hand
+            part, e.g. [0.5, 0.5].
+        seed: Random seed for shuffling (per-epoch).
+    """
+
+    def __init__(self, samples, batch_size, no_hand_ratio=0.3,
+                 left_right_ratio=(0.5, 0.5), seed=None):
+        if not (0.0 <= no_hand_ratio <= 1.0):
+            raise ValueError(f"no_hand_ratio must be in [0, 1], got {no_hand_ratio}")
+        if len(left_right_ratio) != 2 or sum(left_right_ratio) <= 0:
+            raise ValueError(
+                f"left_right_ratio must be two positive numbers, got {left_right_ratio}"
+            )
+        self.batch_size = int(batch_size)
+        self.no_hand_ratio = float(no_hand_ratio)
+        lr_sum = float(sum(left_right_ratio))
+        self.left_ratio = float(left_right_ratio[0]) / lr_sum
+        self.rng = random.Random(seed)
+
+        self.pools = {"neg": [], "left": [], "right": [], "unknown": []}
+        for idx, s in enumerate(samples):
+            if s["presence_label"] == 0:
+                self.pools["neg"].append(idx)
+            elif s["handedness_label"] == 0:
+                self.pools["left"].append(idx)
+            elif s["handedness_label"] == 1:
+                self.pools["right"].append(idx)
+            else:
+                self.pools["unknown"].append(idx)
+
+        self.n_pos_total = sum(len(self.pools[k])
+                               for k in ("left", "right", "unknown"))
+
+    def __len__(self):
+        """Number of full batches in one epoch (one pass over has_hand)."""
+        n_neg = self._n_neg() if self.pools["neg"] else 0
+        n_pos = self.batch_size - n_neg
+        if self.n_pos_total == 0 or n_pos <= 0:
+            return 0
+        return self.n_pos_total // n_pos
+
+    def _n_neg(self):
+        return int(round(self.batch_size * self.no_hand_ratio))
+
+    def _pool_iter(self, key):
+        """Infinite iterator over a shuffled pool (reshuffles when empty)."""
+        pool = self.pools[key]
+        if not pool:
+            return iter(())
+        while True:
+            self.rng.shuffle(pool)
+            yield from pool
+
+    def __iter__(self):
+        iters = {k: self._pool_iter(k) for k in self.pools}
+
+        # Effective quotas: if a pool is empty its quota is redistributed
+        # to the remaining classes so every batch stays full.
+        n_neg = self._n_neg() if self.pools["neg"] else 0
+        n_pos = self.batch_size - n_neg
+        if self.pools["left"] and self.pools["right"]:
+            n_left = int(n_pos * self.left_ratio + 0.5)  # round-half-up
+            n_right = n_pos - n_left
+        elif self.pools["left"]:
+            n_left, n_right = n_pos, 0
+        elif self.pools["right"]:
+            n_left, n_right = 0, n_pos
+        else:
+            n_left, n_right = 0, 0
+
+        for _ in range(len(self)):
+            batch = []
+            if n_neg > 0:
+                batch.extend(next(iters["neg"]) for _ in range(n_neg))
+
+            # has_hand quota: Left/Right first, then any remaining
+            # has_hand (unknown-handedness) samples as fallback
+            remaining_pos = n_pos
+            for key, quota in (("left", n_left), ("right", n_right)):
+                take = min(quota, remaining_pos)
+                if take > 0 and self.pools[key]:
+                    batch.extend(next(iters[key]) for _ in range(take))
+                    remaining_pos -= take
+            while remaining_pos > 0 and self.n_pos_total > 0:
+                for key in ("left", "right", "unknown"):
+                    if self.pools[key]:
+                        batch.append(next(iters[key]))
+                        remaining_pos -= 1
+                        break
+                else:
+                    break  # no has_hand samples at all
+
+            if len(batch) == self.batch_size:
+                yield batch
+
+
+def compute_target_weights(sampling_cfg, num_classes=2):
+    """Inverse-frequency class weights derived from target sampling ratios.
+
+    When per-batch sampling is enabled, the effective training
+    distribution is the target ratio (not the raw dataset counts), so
+    class weights must be computed from the ratios to avoid
+    double-compensating the imbalance.
+
+    Returns:
+        torch.Tensor: (has_hand_weight, no_hand_weight) of shape (2,).
+    """
+    neg_ratio = float(sampling_cfg.get("no_hand_ratio", 0.3))
+    pos_ratio = 1.0 - neg_ratio
+    weights = torch.tensor([1.0 / pos_ratio, 1.0 / neg_ratio],
+                           dtype=torch.float32)
+    return weights / weights.sum() * num_classes

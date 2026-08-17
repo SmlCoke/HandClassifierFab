@@ -53,6 +53,19 @@ training:
 hand_presence:
   loss_weight: 1.0
 
+# Per-batch sampling ratios (training only; the validation set is used as-is).
+# The no_hand pool is much larger than the has_hand pool, so plain random
+# sampling would let no_hand samples dominate every batch and skew the hand
+# presence head. When this section exists, every training batch is composed
+# of exactly round(batch_size * no_hand_ratio) no_hand samples, with the
+# remaining has_hand samples split Left/Right by left_right_ratio
+# (unknown-handedness has_hand samples are used as fallback). Class weights
+# are then derived from these ratios instead of the raw dataset counts.
+sampling:
+  enabled: true
+  no_hand_ratio: 0.3            # 每个 batch 中 no_hand 样本的目标占比（0~1）
+  left_right_ratio: [0.5, 0.5]  # 有手样本中 Left / Right 的目标占比（和为 1）
+
 # Data augmentation
 augmentation:
   horizontal_flip_prob: 0.5

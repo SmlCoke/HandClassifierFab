@@ -16,11 +16,24 @@ from tqdm import tqdm
 
 from hand_classifier.dataset import (
     HandROIDataset, get_transforms, compute_class_weights,
+    StratifiedBatchSampler, compute_target_weights,
 )
 from hand_classifier.parser import collect_all_samples
 from hand_classifier.dataset import split_dataset, save_split_info
 
 logger = logging.getLogger(__name__)
+
+
+def _get_sampling_config(config):
+    """Return (enabled, sampling_cfg) from the config.
+
+    Sampling is enabled when the config contains a ``sampling`` section
+    (default ratios apply when individual keys are missing).
+    """
+    sampling_cfg = config.get("sampling", {})
+    if not sampling_cfg:
+        return False, sampling_cfg
+    return bool(sampling_cfg.get("enabled", True)), sampling_cfg
 
 
 def _create_dataloaders(train_samples, val_samples, config):
@@ -29,6 +42,7 @@ def _create_dataloaders(train_samples, val_samples, config):
     train_cfg = config.get("training", {})
     batch_size = train_cfg.get("batch_size", 64)
     num_workers = train_cfg.get("num_workers", 4)
+    sampling_enabled, sampling_cfg = _get_sampling_config(config)
 
     train_transform = get_transforms(is_train=True, config=config)
     val_transform = get_transforms(is_train=False, config=config)
@@ -41,10 +55,32 @@ def _create_dataloaders(train_samples, val_samples, config):
         val_samples, transform=val_transform,
     )
 
-    train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True,
-        num_workers=num_workers, pin_memory=True, drop_last=True,
-    )
+    if sampling_enabled:
+        # Enforce per-batch class ratios so the huge no_hand pool cannot
+        # dominate training of the hand presence head.
+        sampler = StratifiedBatchSampler(
+            train_samples, batch_size=batch_size,
+            no_hand_ratio=sampling_cfg.get("no_hand_ratio", 0.3),
+            left_right_ratio=sampling_cfg.get("left_right_ratio", [0.5, 0.5]),
+            seed=train_cfg.get("seed", 42),
+        )
+        logger.info(
+            "Per-batch sampling enabled: no_hand_ratio=%.2f, "
+            "left_right_ratio=%s, batches/epoch=%d",
+            sampling_cfg.get("no_hand_ratio", 0.3),
+            sampling_cfg.get("left_right_ratio", [0.5, 0.5]),
+            len(sampler),
+        )
+        train_loader = DataLoader(
+            train_dataset, batch_sampler=sampler,
+            num_workers=num_workers, pin_memory=True,
+        )
+    else:
+        train_loader = DataLoader(
+            train_dataset, batch_size=batch_size, shuffle=True,
+            num_workers=num_workers, pin_memory=True, drop_last=True,
+        )
+
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
         num_workers=num_workers, pin_memory=True,
@@ -129,8 +165,26 @@ def train(config):
     train_cfg = config.get("training", {})
     hp_cfg = config.get("hand_presence", {})
     class_weights_cfg = train_cfg.get("class_weights", "balanced")
+    sampling_enabled, sampling_cfg = _get_sampling_config(config)
 
-    if class_weights_cfg == "balanced":
+    if sampling_enabled:
+        # With per-batch sampling the effective training distribution is
+        # the target ratio, so class weights derive from the ratios
+        # (not the raw dataset counts) to avoid double-compensating.
+        lr = sampling_cfg.get("left_right_ratio", [0.5, 0.5])
+        lr_sum = float(sum(lr))
+        h_weights = torch.tensor(
+            [1.0 / (lr[0] / lr_sum), 1.0 / (lr[1] / lr_sum)],
+            dtype=torch.float32,
+        )
+        h_weights = h_weights / h_weights.sum() * 2.0
+        p_weights = compute_target_weights(sampling_cfg).to(device)
+        logger.info(
+            "Class weights from sampling ratios: handedness=%s, presence=%s",
+            h_weights.tolist(), p_weights.tolist(),
+        )
+        h_weights = h_weights.to(device)
+    elif class_weights_cfg == "balanced":
         h_weights = compute_class_weights(
             train_samples, num_classes=2, task="handedness"
         ).to(device)
