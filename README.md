@@ -242,7 +242,9 @@ sampling:
 └── model.onnx                       # 导出的 ONNX 模型
 ```
 
-例如默认配置（v1 / mobilenet_v3_small）产出在 `../autodl-tmp/TrainFab/outputs/v1/mobilenet_v3_small/`。所有入口脚本（train / evaluate / export_onnx / cvat_label_test）都会根据 `paths.output_root` + `model.version` + `model.architecture` 自动定位输入检查点和输出目录，无需手工传路径；未配置 `output_root` 时保持旧的显式路径行为（向后兼容）。评估/导出配置中的 version/architecture 必须与训练时一致。
+例如默认配置（v1 / mobilenet_v3_small）产出在 `../autodl-tmp/TrainFab/outputs/v1/mobilenet_v3_small/`。所有入口脚本（train / evaluate / export_onnx / cvat_label_test）都会根据 `paths.output_root` + `model.version` + `model.architecture` 自动定位输入检查点和输出目录，无需手工传路径；未配置 `output_root` 时保持旧的显式路径行为（向后兼容）。
+
+**评估/导出自动跟随训练配置**：训练检查点内保存了训练时的完整配置。评估/导出时若 checkpoint 的训练配置与当前配置文件（`evaluate.yaml` / `export_onnx.yaml`）不一致（例如配置文件仍指向别的架构），程序会打印警告并自动采用 checkpoint 的模型配置构建模型、把产物输出到该模型自己的目录——因此这三个配置文件的 `model` 段无需手工保持同步。仓库根目录的 `run.sh` 已按此流程将训练得到的 checkpoint 显式传给 evaluate/export，训练什么就评估/导出什么。
 
 ## 数据来源格式
 

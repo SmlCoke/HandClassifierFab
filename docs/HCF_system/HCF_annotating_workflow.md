@@ -102,6 +102,8 @@ python scripts/dataset_stats.py --config configs/train.yaml
 python scripts/train.py --config configs/train.yaml
 ```
 
+也可用仓库根目录的 `run.sh` 一键执行 核验→统计→训练→评估→导出 全流程（训练完成后自动把 best checkpoint 传给评估与导出步骤）。
+
 ### 输入
 
 - `configs/train.yaml` - 包含所有训练超参数与模型选择（`model.version` + `model.architecture`）。
@@ -161,7 +163,8 @@ python scripts/evaluate.py --config configs/evaluate.yaml [--checkpoint <model_d
 
 ### 输入
 
-- 训练好的模型检查点（`model.version` / `model.architecture` 必须与训练时一致，默认自动定位到 `<model_dir>/checkpoints/best.pth`）。
+- 训练好的模型检查点（默认自动定位到 `<model_dir>/checkpoints/best.pth`）。
+- **配置自动对齐**：检查点内保存了训练时的配置；若 `evaluate.yaml` 的 model 段与检查点不一致，程序打印警告并自动采用检查点的模型配置（模型构建与输出目录均跟随），因此无需手工同步三个配置文件的 model 段。
 - 验证集（由划分产生或来自 `data.val_sources`）。
 
 ### 操作
@@ -189,7 +192,7 @@ python scripts/export_onnx.py --config configs/export_onnx.yaml [--checkpoint <m
 
 ### 输入
 
-- 训练好的模型检查点（`model.version` / `model.architecture` 必须与训练时一致）。
+- 训练好的模型检查点（默认自动定位到 `<model_dir>/checkpoints/best.pth`；**配置自动对齐**机制同阶段 4，`export_onnx.yaml` 的 model 段无需与训练配置同步）。
 
 ### 操作
 

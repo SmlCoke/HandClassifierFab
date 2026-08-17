@@ -45,7 +45,7 @@ python scripts/train.py --config configs/train.yaml
 输入：HCFTrainSource 全部来源（含 eos_2.1 rain/thick 来源 + NegativeTrain 最新负样本池），约 29500 张；HCFEvalSource 验证集（含 NegativeVal 负样本验证来源），通过 glob 自动发现
 输出：`<model_dir>/checkpoints/best.pth`、`<model_dir>/splits.json`、`<model_dir>/train/metrics.jsonl`，其中 `<model_dir>` = `paths.output_root/<model.version>/<model.architecture>/`（默认 `../autodl-tmp/TrainFab/outputs/v1/mobilenet_v3_small/`）
 
-模型版本选择：修改 `configs/train.yaml` 中 `model.version`（`v1`/`v2`）与 `model.architecture`，例如 `version: "v2"` + `architecture: "v2_convnet_l"`。评估与导出配置中的版本/架构必须与训练一致；产物按系列/架构分目录，不同模型互不覆盖。
+模型版本选择：修改 `configs/train.yaml` 中 `model.version`（`v1`/`v2`）与 `model.architecture`，例如 `version: "v2"` + `architecture: "v2_convnet_l"`。产物按系列/架构分目录，不同模型互不覆盖。评估/导出会从 checkpoint 自动对齐模型配置（见 README「输出目录」节），无需手工同步三个配置文件的 model 段；`run.sh` 一键流水线已按此流程传递 checkpoint。
 
 批量采样比例：`configs/train.yaml` 的 `sampling` 节控制每个训练 batch 的组成（no_hand_ratio 为无手样本占比，left_right_ratio 为有手样本中左右手占比），防止庞大的负样本池主导 hand presence 训练；仅作用于训练，验证集按真实分布使用。
 
