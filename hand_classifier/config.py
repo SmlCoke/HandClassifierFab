@@ -101,7 +101,22 @@ def align_config_to_checkpoint(config, checkpoint):
 
     ckpt_model = ckpt_cfg.get("model")
     cur_model = config.get("model", {})
-    if not ckpt_model or ckpt_model == cur_model:
+    if not ckpt_model:
+        return config, False
+
+    # Compare only the architecture-defining fields: 'pretrained' is
+    # legitimately different between train.yaml (true) and
+    # evaluate.yaml / export_onnx.yaml (false) and must not trigger
+    # alignment.
+    def _arch_key(model_cfg):
+        return {
+            k: model_cfg.get(k) for k in (
+                "version", "architecture", "num_handedness",
+                "num_presence", "input_channels",
+            )
+        }
+
+    if _arch_key(ckpt_model) == _arch_key(cur_model):
         return config, False
 
     config = dict(config)

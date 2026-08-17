@@ -149,6 +149,27 @@ def test_align_same_model_no_change():
     assert aligned is config
 
 
+def test_align_pretrained_difference_no_alignment():
+    """pretrained=true in the checkpoint vs false in eval/export configs
+    is expected and must NOT trigger alignment."""
+    config = {
+        "model": {
+            "version": "v1", "architecture": "mobilenet_v3_small",
+            "num_handedness": 2, "num_presence": 2,
+            "input_channels": 1, "pretrained": False,
+        },
+        "paths": {"output_root": "/tmp/out"},
+    }
+    ckpt = _ckpt({
+        "version": "v1", "architecture": "mobilenet_v3_small",
+        "num_handedness": 2, "num_presence": 2,
+        "input_channels": 1, "pretrained": True,
+    })
+    aligned, changed = align_config_to_checkpoint(config, ckpt)
+    assert changed is False
+    assert aligned is config
+
+
 def test_align_checkpoint_without_config_no_change():
     config = {
         "model": {"version": "v1", "architecture": "mobilenet_v3_small"},
