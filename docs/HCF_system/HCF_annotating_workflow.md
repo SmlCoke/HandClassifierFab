@@ -4,24 +4,68 @@
 
 ## 概述
 
-HCF 系统训练一个双头 MobileNetV3-Small 模型，共享 backbone，同时进行两项分类任务：
+HCF 系统训练一个双头模型，共享 backbone，同时进行两项分类任务：
 
 1. **handedness**：Left（左手，标签 0）/ Right（右手，标签 1）
 2. **hand_presence**：no_hand（无手，标签 0）/ has_hand（有手，标签 1）
 
 模型输出为 dict：`{"handedness": Tensor, "hand_presence": Tensor}`。训练好的模型导出为 ONNX 格式（包含两个输出头），用于对 CVAT 自动标注 XML 文件进行重新标注。
 
-流水线包含以下五个阶段：
+模型分为两个系列（通过配置 `model.version` 选择，输入输出格式完全一致）：
 
-1. 数据集统计
-2. 训练
-3. 评估
-4. ONNX 导出
-5. CVAT 标签导出测试
+- **v1.0 系列**（`models/v1/`）：原始 MobileNetV3-Small/Large 双头模型（约 150 万 / 420 万参数）。
+- **v2.0 系列**（`models/v2/`）：为提升精度而设计的大参数量模型，牺牲延迟换取精度（不参与板端部署，仅用于数据自动化标注）。包含标准卷积 CNN（`v2_convnet_s/l`）、多分支卷积（`v2_multibranch`）、CNN+Transformer 混合（`v2_hybrid_s/l`）、以及 ImageNet 预训练迁移主干（`v2_resnet50`、`v2_convnext_tiny`、`v2_efficientnet_v2_s`、`v2_vit_b16`）。
+
+流水线包含以下六个阶段：
+
+1. 数据集核验
+2. 数据集统计
+3. 训练
+4. 评估
+5. ONNX 导出
+6. CVAT 标签导出测试
 
 ---
 
-## 阶段 1：数据集统计
+## 阶段 1：数据集核验
+
+### 命令
+
+```bash
+python scripts/verify_datasets.py --config configs/train.yaml
+# 或
+make dataset-verify
+```
+
+也可通过 `--sources` 覆盖要核验的数据来源（逗号分隔的 glob 列表，默认取 `data.train_sources` + `data.val_sources`）。
+
+### 输入
+
+- `configs/train.yaml` 中 `data.train_sources` / `data.val_sources` 指定的数据来源目录（位于服务器端）。
+- 每个数据来源目录包含 `images/*.png` 和一个 CVAT XML 标注文件（或仅有 `images/*.png` 的纯负样本目录）。
+
+### 操作
+
+对每个解析出的数据来源目录：
+
+1. 检查目录结构（`images/` + XML，或仅有 `images/` 的负样本目录）。
+2. 解析 XML（优先 `cvat_reviewed.xml`，其次 `cvat_autolabel.xml`），统计标签分布（Left/Right/no_hand/ignore_for_training/unknown_handedness）。
+3. 交叉核对：XML 中引用的每张图像必须真实存在于 `images/`；磁盘上的每张图像应被 XML 引用（孤儿图像仅告警）。
+4. 逐张加载所有 PNG（PIL），确认无损坏文件、尺寸均为 256x256（非灰度模式仅告警）。
+5. 无 `images/` 且无 XML 的目录（如 `old/`、`NegativeTrain/` 容器目录）自动跳过——与 `hand_classifier/parser.py` 的收集逻辑一致。
+
+### 输出
+
+- 终端打印每个来源的核验报告（状态、图像数、XML 图像数、标签分布、图像模式、错误/告警列表）与汇总。
+- 退出码：0 = 全部正常；2 = 存在错误（XML 无法解析、XML 引用图像缺失、图像损坏、尺寸不符等）。
+
+### 原理
+
+在训练前验证数据仓库可用性，避免训练/评估时因缺图或坏图导致静默跳过（parser 对缺失图像是静默跳过的）。此阶段与 `dataset_stats` 的差别：`dataset_stats` 只统计标签分布，`verify_datasets` 做结构与图像完整性核验。
+
+---
+
+## 阶段 2：数据集统计
 
 ### 命令
 
@@ -46,11 +90,11 @@ python scripts/dataset_stats.py --config configs/train.yaml
 
 ### 原理
 
-在训练前验证数据完整性，了解类别分布情况。约 2.75:1 的 Left:Right 不平衡比例是训练时使用平衡类别权重的依据。
+在训练前验证数据完整性，了解类别分布情况。数据集加入新的 rain/thick 手势来源（`eos_2.1-*`）后，全局 Left:Right 比例趋近 1:1，但训练时仍使用平衡类别权重以应对个别来源的偏斜。
 
 ---
 
-## 阶段 2：训练
+## 阶段 3：训练
 
 ### 命令
 
@@ -60,14 +104,17 @@ python scripts/train.py --config configs/train.yaml
 
 ### 输入
 
-- `configs/train.yaml` - 包含所有训练超参数。
-- `autodl-tmp/DatasetFab/HCFTrainSource/*` 下的数据来源目录。
+- `configs/train.yaml` - 包含所有训练超参数与模型选择（`model.version` + `model.architecture`）。
+- `autodl-tmp/DatasetFab/HCFTrainSource/*` 下的数据来源目录（含 10 个新增 `eos_2.1-*` rain/thick 训练来源）。
 
 ### 操作
 
-1. **数据收集**：解析所有数据来源目录，收集带有 Left/Right 标签的样本。
-2. **数据集划分**：当前配置指定了 2 个固定验证集（`complex-near-bright-random-test-s01-peak` 和 `complex-mid-bright-random-val-s01-peak`），其余 6 个数据来源全部用作训练集。程序自动从训练集中排除验证集来源，避免数据泄漏。若 `val_sources` 为空，则回退到在每个数据来源内部按标签进行 90/10 分层抽样的划分方式。当前不划分测试集。
-3. **模型构建**：构建 MobileNetV3-Small 模型，第一层卷积的 RGB 三通道预训练权值平均为单通道，分类头替换为二分类输出。
+1. **数据收集**：解析所有数据来源目录，收集带有 Left/Right/no_hand 标签的样本。
+2. **数据集划分**：当前配置指定验证集为 `HCFEvalSource/*`（含 2 个新增 rain/thick 验证来源：`eos_2.1-white-mid-bright-rainleft-val-s06-soar`、`eos_2.1-white-mid-bright-thickright-val-s06-dragon`，通过 glob 自动发现），其余数据来源全部用作训练集。程序自动从训练集中排除验证集来源，避免数据泄漏。若 `val_sources` 为空，则回退到在每个数据来源内部按标签进行 90/10 分层抽样的划分方式。当前不划分测试集。
+3. **模型构建**：按 `model.version` + `model.architecture` 构建模型：
+   - v1.0：MobileNetV3-Small/Large，第一层卷积的 RGB 三通道预训练权值平均为单通道，分类头替换为双分类头。
+   - v2.0 自定义系列：标准卷积 / 多分支卷积 / CNN+Transformer 混合模型，从零训练。
+   - v2.0 迁移系列：ImageNet 预训练主干（ResNet50/ConvNeXt/EfficientNetV2/ViT），首层卷积 RGB 权值平均为单通道，位置编码（ViT）插值到 256px 输入。
 4. **训练循环**：
    - 损失函数：`CrossEntropyLoss`，使用平衡类别权重（逆频率）。
    - 优化器：`AdamW`，采用差异化学习率（backbone 使用基础 lr，分类头使用 lr×10）。
@@ -85,17 +132,18 @@ python scripts/train.py --config configs/train.yaml
 
 ### 参数调整原理
 
-- `training.batch_size: 64`：对于 256×256 单通道图像，RTX 3090 24GB 显存可轻松容纳。
-- `training.learning_rate: 0.0001`：微调预训练模型的标准学习率。
+- `model.version` / `model.architecture`：选择训练哪个系列的哪个模型；v2.0 系列参数远大于 v1.0，精度优先、延迟不敏感。
+- `training.batch_size: 64`：对于 256×256 单通道图像，RTX 3090 24GB 显存可轻松容纳（v2 大模型建议保持 64，必要时降低到 32）。
+- `training.learning_rate: 0.0001`：微调预训练模型的标准学习率；v2.0 自定义系列（从零训练）建议提高到 `0.0003`~`0.001`。
 - `training.head_lr_multiplier: 10`：新分类头未经过预训练，需要比 backbone 更快的收敛速度。
 - `training.warmup_epochs: 5`：预热有助于在差异化学习率配置下稳定早期训练。
-- `training.class_weights: "balanced"`：补偿约 2.75:1 的 Left:Right 类别不平衡。
+- `training.class_weights: "balanced"`：补偿各来源 Left:Right 类别不平衡。
 - `augmentation.horizontal_flip_prob: 0.5`：水平翻转后必须同步交换 0↔1 标签，保证标签正确性。
 - `augmentation.rotation_degrees: 10`：小角度旋转可模拟手部姿态的自然变化。
 
 ---
 
-## 阶段 3：评估
+## 阶段 4：评估
 
 ### 命令
 
@@ -105,7 +153,7 @@ python scripts/evaluate.py --config configs/evaluate.yaml [--checkpoint outputs/
 
 ### 输入
 
-- 训练好的模型检查点。
+- 训练好的模型检查点（`model.version` / `model.architecture` 必须与训练时一致）。
 - 验证集（由划分产生或来自 `data.val_sources`）。
 
 ### 操作
@@ -123,7 +171,7 @@ python scripts/evaluate.py --config configs/evaluate.yaml [--checkpoint outputs/
 
 ---
 
-## 阶段 4：ONNX 导出
+## 阶段 5：ONNX 导出
 
 ### 命令
 
@@ -133,7 +181,7 @@ python scripts/export_onnx.py --config configs/export_onnx.yaml [--checkpoint ou
 
 ### 输入
 
-- 训练好的模型检查点。
+- 训练好的模型检查点（`model.version` / `model.architecture` 必须与训练时一致）。
 
 ### 操作
 
@@ -148,13 +196,14 @@ python scripts/export_onnx.py --config configs/export_onnx.yaml [--checkpoint ou
 
 ### 原理
 
-- opset=13 是广泛支持的 ONNX 算子集版本，覆盖 MobileNetV3 的所有算子。
+- opset=13 是广泛支持的 ONNX 算子集版本，覆盖 v1.0/v2.0 所有模型算子（GELU、多分支卷积、手动实现的注意力等均为 opset-13 兼容算子）。
 - 动态 batch 允许推理阶段处理任意批量大小。
 - 验证步骤确保导出后的 ONNX 模型在部署前是有效的。
+- 无论 v1.0 还是 v2.0，导出的 ONNX 输入/输出接口完全一致（`input` / `handedness` / `hand_presence`），下游标注流程无需任何改动。
 
 ---
 
-## 阶段 5：CVAT 标签导出测试
+## 阶段 6：CVAT 标签导出测试
 
 ### 命令
 

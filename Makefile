@@ -1,4 +1,4 @@
-.PHONY: setup dataset-stats train evaluate export-onnx cvat-label-test infer test all clean
+.PHONY: setup dataset-stats dataset-verify train evaluate export-onnx cvat-label-test infer test all clean
 
 # Config files (one per functional target)
 TRAIN_CONFIG       ?= configs/train.yaml
@@ -13,6 +13,9 @@ setup:
 
 dataset-stats:
 	python scripts/dataset_stats.py --config $(TRAIN_CONFIG)
+
+dataset-verify:
+	python scripts/verify_datasets.py --config $(TRAIN_CONFIG)
 
 train:
 	python scripts/train.py --config $(TRAIN_CONFIG)

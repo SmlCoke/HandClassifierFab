@@ -1,5 +1,7 @@
 """MobileNetV3 adapted for single-channel input with dual classification heads.
 
+v1.0 series (original). Kept byte-compatible with the original v1.0 models.
+
 Outputs:
   - handedness: Left (0) / Right (1)
   - hand_presence: no_hand (0) / has_hand (1)

@@ -28,6 +28,7 @@ def export_onnx(config, checkpoint_path=None, output_path=None):
         pretrained=False,
         num_handedness=model_cfg.get("num_handedness", 2),
         num_presence=model_cfg.get("num_presence", 2),
+        version=model_cfg.get("version", "v1"),
     )
 
     paths_cfg = config.get("paths", {})

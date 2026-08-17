@@ -19,7 +19,17 @@ data:
     stratified: true
 
 # Model architecture
+# version: "v1" = original MobileNetV3 series (mobilenet_v3_small/large)
+#          "v2" = accuracy-first series (see models/v2/):
+#            v2_convnet_s (~13M), v2_convnet_l (~64M), v2_multibranch (~15M),
+#            v2_hybrid_s (~16M), v2_hybrid_l (~41M), v2_resnet50 (~24M),
+#            v2_convnext_tiny (~28M), v2_efficientnet_v2_s (~20M),
+#            v2_vit_b16 (~86M)
+# v2 custom CNNs/hybrids are trained from scratch; v2 transfer models
+# (resnet50/convnext_tiny/efficientnet_v2_s/vit_b16) use ImageNet
+# pretrained weights when pretrained: true
 model:
+  version: "v1"
   architecture: "mobilenet_v3_small"
   num_handedness: 2
   num_presence: 2

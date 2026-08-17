@@ -161,6 +161,7 @@ def evaluate(config, checkpoint_path=None, output_dir=None):
         pretrained=False,
         num_handedness=model_cfg.get("num_handedness", 2),
         num_presence=model_cfg.get("num_presence", 2),
+        version=model_cfg.get("version", "v1"),
     )
 
     if checkpoint_path is None:

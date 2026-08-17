@@ -113,6 +113,7 @@ def train(config):
         pretrained=model_cfg.get("pretrained", True),
         num_handedness=model_cfg.get("num_handedness", 2),
         num_presence=model_cfg.get("num_presence", 2),
+        version=model_cfg.get("version", "v1"),
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

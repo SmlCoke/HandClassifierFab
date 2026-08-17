@@ -18,7 +18,16 @@ pip install -r requirements.txt
 
 ## 流水线
 
-### 1. 查看数据集统计
+### 1. 核验数据集
+
+```bash
+python scripts/verify_datasets.py --config configs/train.yaml
+```
+
+输入：`autodl-tmp/DatasetFab/HCFTrainSource/*` + `HCFEvalSource/*` 下的数据来源目录
+输出：每个数据来源的核验报告（结构、XML、标签分布、图像完整性）；退出码 0=正常，2=有错误
+
+### 2. 查看数据集统计
 
 ```bash
 python scripts/dataset_stats.py --config configs/train.yaml
@@ -27,16 +36,18 @@ python scripts/dataset_stats.py --config configs/train.yaml
 输入：`autodl-tmp/DatasetFab/HCFTrainSource/*` 下的数据来源目录
 输出：每个数据来源的标签分布（Left/Right 数量及比例）
 
-### 2. 训练
+### 3. 训练
 
 ```bash
 python scripts/train.py --config configs/train.yaml
 ```
 
-输入：6 个数据来源目录（训练集），约 4900 张图像；2 个数据来源目录（验证集），约 1100 张图像
+输入：HCFTrainSource 全部来源（含 10 个新增 eos_2.1 rain/thick 来源 + NegativeTrain），约 15000 张；HCFEvalSource 验证集（含 2 个新增 eos_2.1 验证来源），通过 glob 自动发现
 输出：`outputs/checkpoints/best.pth`、`outputs/splits.json`、`outputs/train/metrics.jsonl`
 
-### 3. 评估
+模型版本选择：修改 `configs/train.yaml` 中 `model.version`（`v1`/`v2`）与 `model.architecture`，例如 `version: "v2"` + `architecture: "v2_convnet_l"`。评估与导出配置中的版本/架构必须与训练一致。
+
+### 4. 评估
 
 ```bash
 python scripts/evaluate.py --config configs/evaluate.yaml
@@ -45,16 +56,16 @@ python scripts/evaluate.py --config configs/evaluate.yaml
 输入：`outputs/checkpoints/best.pth`，验证集
 输出：`outputs/eval/val_metrics.json`
 
-### 4. 导出 ONNX
+### 5. 导出 ONNX
 
 ```bash
 python scripts/export_onnx.py --config configs/export_onnx.yaml
 ```
 
 输入：`outputs/checkpoints/best.pth`
-输出：`outputs/model.onnx`
+输出：`outputs/model.onnx`（v1.0/v2.0 输入输出接口一致）
 
-### 5. CVAT 标签导出测试
+### 6. CVAT 标签导出测试
 
 ```bash
 python scripts/cvat_label_test.py --config configs/cvat_label_test.yaml
@@ -63,7 +74,7 @@ python scripts/cvat_label_test.py --config configs/cvat_label_test.yaml
 输入：`outputs/model.onnx`，CVAT 自动标注 XML + 图像
 输出：`outputs/cvat_relabeled.xml`
 
-### 6. 推理：筛选负样本
+### 7. 推理：筛选负样本
 
 ```bash
 python scripts/infer.py --config configs/infer.yaml
@@ -72,7 +83,7 @@ python scripts/infer.py --config configs/infer.yaml
 输入：`configs/infer.yaml` 指定的 ONNX 模型 + 图像目录
 输出：低 hand_presence 图像拷贝至指定输出目录
 
-### 7. 运行测试
+### 8. 运行测试
 
 ```bash
 python -m pytest tests/ -v
@@ -82,6 +93,7 @@ python -m pytest tests/ -v
 
 ```bash
 make setup             # pip install -r requirements.txt
+make dataset-verify    # 核验数据集完整性
 make dataset-stats     # 打印标签分布
 make train             # 训练模型
 make evaluate          # 运行评估

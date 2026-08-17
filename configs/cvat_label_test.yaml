@@ -3,6 +3,7 @@
 
 # Model architecture (for reference; ONNX model is loaded directly)
 model:
+  version: "v1"
   architecture: "mobilenet_v3_small"
   num_handedness: 2
   num_presence: 2

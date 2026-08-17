@@ -1,8 +1,10 @@
 # HCF ONNX Export Configuration
 # =============================
 
-# Model architecture (must match the checkpoint)
+# Model architecture (must match the checkpoint; version must match too)
+# version: "v1" = mobilenet_v3_small/large | "v2" = v2_* architectures
 model:
+  version: "v1"
   architecture: "mobilenet_v3_small"
   num_handedness: 2
   num_presence: 2
