@@ -13,7 +13,6 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-import onnxruntime as ort
 import torchvision.transforms as T
 
 logger = logging.getLogger(__name__)
@@ -111,6 +110,8 @@ def run_inference(config):
     # Validate
     if not onnx_model.exists():
         raise FileNotFoundError(f"ONNX model not found: {onnx_model}")
+
+    import onnxruntime as ort
 
     logger.info("Loading ONNX model: %s", onnx_model)
     session = ort.InferenceSession(str(onnx_model), providers=["CPUExecutionProvider"])

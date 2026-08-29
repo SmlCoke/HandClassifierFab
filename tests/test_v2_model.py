@@ -120,6 +120,7 @@ def test_v2_onnx_export_contract(name, tmp_path):
     must export cleanly at opset 13.
     """
     import numpy as np
+    pytest.importorskip("onnxruntime")
     import onnxruntime as ort
 
     model = build_model(name, pretrained=False)

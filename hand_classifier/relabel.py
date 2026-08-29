@@ -15,7 +15,6 @@ from tqdm import tqdm
 
 import torch
 import torchvision.transforms as T
-import onnxruntime as ort
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +58,8 @@ def relabel_cvat_xml(xml_path, model_path, output_path, images_dir=None):
         images_dir = xml_path.parent / "images"
     else:
         images_dir = Path(images_dir)
+
+    import onnxruntime as ort
 
     session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
 
