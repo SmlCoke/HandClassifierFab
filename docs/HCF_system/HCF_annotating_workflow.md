@@ -239,7 +239,7 @@ python scripts/cvat_label_test.py --config configs/cvat_label_test.yaml [--check
 
 ### 输出
 
-- 重新标注后的 XML 文件（默认：`outputs/cvat_relabeled.xml`）。
+- 重新标注后的 XML 文件（默认：`cvat_hcf.xml`，与输入 XML 同目录；文件名由配置 `cvat_label_test.output_filename` 指定，`-o` 可覆盖路径）。
 - 终端输出：总图像数、Left 数、Right 数、错误数、与金标准的一致性率（如有）。
 
 ### 原理
