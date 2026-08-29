@@ -22,3 +22,5 @@ build/
 
 # model outputs
 assets/
+# but version the AetherSign logo under docs/assets
+!docs/assets/
